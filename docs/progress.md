@@ -150,3 +150,12 @@ Performance now reflects the larger persistent graph. Paused views sampled about
 Both full-history privacy scans pass; staged scans run through the preserved pre-commit hook. The private operating context and generated/raw evidence remain ignored. Requested worker model/effort was project-configured Astra at medium; dispatch confirmed those settings. Final PR review uses the same configured model at high effort. Review and landing follow on the stable pushed head; the PR records their authoritative outcome.
 
 The final 20260917T222503Z-b5f1bf build passes all **16 review-browser groups**, including foreground semantic picks and actual attention DOM/SVG masking for first, middle and last tokens. Focused flow-description checks verify all five phase captions and cache growth from eight to nine rows. Actual mouse-wheel semantic zoom passes overview → layer → attention → layer → overview while retaining layer/group/token identity. Final formatting passes.
+
+
+## PR review correction: narrow router flow
+
+PR #5's first independent review found that a narrow router camera sat outside the fixed annotation distance, unmounting both labels and active packets. The actual 390-pixel browser reproduced this on build 20260917T222503Z-b5f1bf: the flow clock reached 3 seconds but zero packet groups rendered. The baseline report and screenshot are preserved in artifacts/deep-browser/narrow-router-before-report.json and flow-router-narrow-before-3.png.
+
+Active flow now mounts independently of annotation distance, once in the current graph coordinate system. Router label thresholds account for responsive framing. The full deep-interaction suite passes **11/11** on build **20260917T223611Z-479936**, including two actual visible packet groups at 3 and 9 seconds, changed world positions, selected expert labels, normalized weights and no browser errors. A subsequent narrow-only framing correction removes double aspect compensation, shortens router labels and keeps parent-layer annotations outside the router close-up.
+
+Latest successful preview: **20260917T223810Z-6491a9**, unchanged GLB **transformer-81d7ce05ce79.glb**, **512,244 bytes**, clean build **3.796 seconds**. The focused narrow browser check and screenshot validate the final presentation before re-review. Earlier full-browser, flight and numerical evidence remains applicable to unchanged behavior. Re-review follows on the batched correction; no merge occurs without approval for that head.

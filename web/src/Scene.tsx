@@ -258,17 +258,6 @@ function Effects({
   const flowPosition = tokenPose(p.time, p.state.spacing, p.state.layer);
   return (
     <>
-      {(p.flowPlaying || p.flowTime > 0) && (
-        <Flow
-          view={view}
-          time={p.flowTime}
-          group={g}
-          token={p.state.token}
-          spacing={p.state.spacing}
-          experts={p.top2}
-          expert={p.state.expert}
-        />
-      )}
       {overview && (
         <>
           {label("input", "Token IDs", [-1, 1.9, 0])}
@@ -477,14 +466,18 @@ function Effects({
             <>
               {label(
                 "router",
-                `Token ${p.state.token + 1}: choose 2`,
+                compact ? "Top 2" : `Token ${p.state.token + 1}: choose 2`,
                 [0, 1.7, 0],
               )}
-              {label("merge", "Combine outputs", [0, 1.7, 0])}
+              {label(
+                "merge",
+                compact ? "Merge" : "Combine outputs",
+                [0, 1.7, 0],
+              )}
               {Array.from({ length: 8 }, (_, e) =>
                 label(
                   `expert_${e}`,
-                  `Expert ${e + 1}${p.top2.includes(e) ? " ✓" : ""}`,
+                  `${compact ? "E" : "Expert "}${e + 1}${p.top2.includes(e) ? " ✓" : ""}`,
                   [0, 1.1 + (e % 2) * 0.8, 0],
                 ),
               )}
@@ -786,7 +779,7 @@ function Model(p: Props) {
     }
     if (view === "router") {
       target = [5, 0, 0];
-      position = [5 + 7 * distanceScale, 9 * distanceScale, 2 * distanceScale];
+      position = [12, 9, 2];
     }
     if (["overview", "input", "output"].includes(view)) {
       const anchor = nodes.get(anchors[view])!;
@@ -1088,6 +1081,30 @@ function Model(p: Props) {
   });
   return (
     <>
+      {(p.flowPlaying || p.flowTime > 0) && (
+        <group
+          position={
+            ["overview", "input", "output"].includes(p.state.view)
+              ? [0, 0, 0]
+              : layerOrigin(p.state.layer, p.state.spacing)
+          }
+          scale={
+            ["overview", "input", "output"].includes(p.state.view)
+              ? 1
+              : FOCUS_SCALE
+          }
+        >
+          <Flow
+            view={p.state.view}
+            time={p.flowTime}
+            group={p.state.group}
+            token={p.state.token}
+            spacing={p.state.spacing}
+            experts={p.top2}
+            expert={p.state.expert}
+          />
+        </group>
+      )}
       <primitive
         object={scene}
         onClick={(e: any) => {
@@ -1130,9 +1147,14 @@ function Model(p: Props) {
       </AnnotationLevel>
       {(
         [
-          ["layer", [0, 0.6, 0], 9, 100],
+          ["layer", [0, 0.6, 0], 17, 100],
           ["attention", [-5, 0.5, (p.state.group - 3.5) * 1.2], 3.5, 13],
-          ["router", [5, 0, 0], 3, 15],
+          [
+            "router",
+            [5, 0, 0],
+            3,
+            15 * Math.max(1, (1.6 * size.height) / size.width),
+          ],
           ["expert", [5, 0, (p.state.expert - 3.5) * 1.1], 0, 3],
           ["cache", [-4.9, -2.36, (p.state.group - 3.5) * 1.2], 0, 1.8],
           ["matrix", [-3.35, 1.45, (p.state.group - 3.5) * 1.2], 0, 3.5],

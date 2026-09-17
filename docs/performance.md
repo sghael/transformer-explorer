@@ -1,6 +1,6 @@
 # Performance evidence
 
-Measured persistent-graph build: **20260917T222114Z-777233**. These are Chromium headless ANGLE SwiftShader software-rendering diagnostics, not a benchmark on the viewing laptop. The later 20260917T222503Z-b5f1bf build only relocates the flow description in HTML; its graph and animation geometry are unchanged.
+Measured persistent-graph build: **20260917T222114Z-777233**. These are Chromium headless ANGLE SwiftShader software-rendering diagnostics, not a benchmark on the viewing laptop. Later builds relocate the flow description, separate flow from annotation visibility, and improve narrow router framing. The exported graph is unchanged; the table reports the measured build rather than claiming a new hardware benchmark.
 
 Viewport: 1440 × 1100; device pixel ratio: 1; Chromium 140.0.7339.186. Each view sampled 59 frame intervals after warm-up. Other acceptance browsers ran on the same host during this verification campaign, so these measurements are not a controlled hardware benchmark.
 

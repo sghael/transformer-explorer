@@ -10,6 +10,7 @@ const artifacts = fileURLToPath(
 );
 await mkdir(artifacts, { recursive: true });
 const report = {
+  filter: process.env.DEEP_CHECK_FILTER ?? null,
   checks: [],
   screenshots: [],
   errors: [],
@@ -110,6 +111,12 @@ const save = () =>
     JSON.stringify(report, null, 2),
   );
 const check = async (name, action) => {
+  if (
+    process.env.DEEP_CHECK_FILTER &&
+    !name.includes(process.env.DEEP_CHECK_FILTER) &&
+    name !== "No browser errors"
+  )
+    return;
   console.log("START " + name);
   report.activeCheck = name;
   await save();
@@ -391,6 +398,71 @@ try {
       ).toBeVisible();
       await capture("flow-router-output");
       return { input, output };
+    },
+  );
+  await check(
+    "Narrow router flow keeps two visible vectors and selected expert labels",
+    async () => {
+      await button("Reset").click();
+      await page.setViewportSize({ width: 390, height: 1000 });
+      await button("Expert routing").click();
+      await expect
+        .poll(async () => (await scene()).selected.view)
+        .toBe("router");
+      await page.waitForTimeout(150);
+      await settled();
+      const evidence = [];
+      let previous = 0;
+      try {
+        for (const time of [3, 9]) {
+          for (let step = previous; step < time; step++)
+            await button("Step flow").click();
+          previous = time;
+          await expect.poll(async () => (await scene()).flowTime).toBe(time);
+          const current = await scene();
+          await capture(`flow-router-narrow-${time}`);
+          expect(packets(current)).toHaveLength(2);
+          expect(
+            packets(current).every((packet) => packet.kind === "vector"),
+          ).toBe(true);
+          const canvas = page.locator(".canvas");
+          await expect(
+            canvas.getByText("Top 2", {
+              exact: true,
+            }),
+          ).toBeVisible();
+          await expect(
+            canvas.getByText("Merge", { exact: true }),
+          ).toBeVisible();
+          for (const expert of current.routeExperts)
+            await expect(
+              canvas.getByText(`E${expert + 1} ✓`, { exact: true }),
+            ).toBeVisible();
+          const rows = page.locator(
+            ".router-evidence-table tbody tr.selected-row",
+          );
+          await expect(rows).toHaveCount(2);
+          const weights = await rows.locator("td:last-child").allTextContents();
+          expect(weights.map(Number).sort()).toEqual(
+            current.routeWeights
+              .map((value) => Number(value.toFixed(3)))
+              .sort(),
+          );
+          await expect(
+            page.getByRole("heading", {
+              name: "Two selected expert outputs",
+              exact: true,
+            }),
+          ).toBeVisible();
+          evidence.push(current);
+        }
+        expect(
+          packets(evidence[1]).map((packet) => packet.position),
+        ).not.toEqual(packets(evidence[0]).map((packet) => packet.position));
+        return evidence;
+      } finally {
+        await page.setViewportSize({ width: 1440, height: 1100 });
+      }
     },
   );
   await check(
