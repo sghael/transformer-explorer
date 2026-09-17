@@ -100,6 +100,119 @@ const capture = async (name, target = page) => {
   console.log(`CAPTURE ${name}`);
   await saveProgress();
 };
+// Locate a real foreground surface, then use the browser mouse to pick it.
+// Sampling triangles handles frames, bevels, and small nested geometry.
+const surfacePoint = async (id) =>
+  page.evaluate((id) => {
+    const { camera, scene, gl, raycaster } = window.__explorerInspect();
+    if (!raycaster)
+      throw new Error("Scene inspection must expose its raycaster");
+    scene.updateMatrixWorld(true);
+    camera.updateMatrixWorld(true);
+    const rect = gl.domElement.getBoundingClientRect();
+    const visible = (object) => {
+      for (let node = object; node; node = node.parent)
+        if (!node.visible) return false;
+      return true;
+    };
+    const semantic = (object) => {
+      while (object && !object.userData.interactive) object = object.parent;
+      return object?.userData.id || object?.name;
+    };
+    const candidates = [];
+    let modelRoot;
+    scene.traverse((mesh) => {
+      if (!mesh.isMesh || !visible(mesh) || semantic(mesh) !== id) return;
+      modelRoot = mesh;
+      while (modelRoot.parent && modelRoot.parent !== scene)
+        modelRoot = modelRoot.parent;
+      // Overview layer frames intentionally pick their enclosing footprint.
+      // Sample that actual bounding box; foreground rays still decide the hit.
+      if (
+        mesh.userData.component === "decoder_layer" &&
+        window.__explorer.state.view === "overview"
+      ) {
+        mesh.geometry.computeBoundingBox();
+        const { min, max } = mesh.geometry.boundingBox;
+        for (let face = 0; face < 3; face++)
+          for (const side of [0, 1]) {
+            for (const u of [0.2, 0.5, 0.8])
+              for (const v of [0.2, 0.5, 0.8]) {
+                const fractions = [u, v];
+                let next = 0;
+                const point = camera.position.clone();
+                for (let axis = 0; axis < 3; axis++) {
+                  const ratio = axis === face ? side : fractions[next++];
+                  point.setComponent(
+                    axis,
+                    min.getComponent(axis) +
+                      ratio * (max.getComponent(axis) - min.getComponent(axis)),
+                  );
+                }
+                point.applyMatrix4(mesh.matrixWorld).project(camera);
+                if (
+                  Math.abs(point.x) < 0.98 &&
+                  Math.abs(point.y) < 0.98 &&
+                  Math.abs(point.z) < 1
+                )
+                  candidates.push(point);
+              }
+          }
+      }
+      const positions = mesh.geometry.attributes.position;
+      const indices = mesh.geometry.index;
+      const count = indices?.count ?? positions.count;
+      for (let i = 0; i + 2 < count; i += 3) {
+        const point = camera.position.clone().set(0, 0, 0);
+        for (let j = 0; j < 3; j++) {
+          const index = indices ? indices.getX(i + j) : i + j;
+          point.add(
+            camera.position.clone().fromBufferAttribute(positions, index),
+          );
+        }
+        point.divideScalar(3).applyMatrix4(mesh.matrixWorld).project(camera);
+        if (
+          Math.abs(point.x) >= 0.98 ||
+          Math.abs(point.y) >= 0.98 ||
+          Math.abs(point.z) >= 1
+        )
+          continue;
+        candidates.push(point);
+      }
+    });
+    candidates.sort((a, b) => a.x * a.x + a.y * a.y - b.x * b.x - b.y * b.y);
+    for (const point of candidates) {
+      const x = Math.round(rect.x + ((point.x + 1) * rect.width) / 2);
+      const y = Math.round(rect.y + ((1 - point.y) * rect.height) / 2);
+      // Chromium mouse coordinates land on pixels; require a real pixel interior.
+      const hitsTarget = ([dx, dy]) => {
+        raycaster.setFromCamera(
+          {
+            x: ((x + dx - rect.x) / rect.width) * 2 - 1,
+            y: 1 - ((y + dy - rect.y) / rect.height) * 2,
+          },
+          camera,
+        );
+        const hit = raycaster
+          .intersectObject(modelRoot, true)
+          .find((hit) => visible(hit.object));
+        return hit && semantic(hit.object) === id;
+      };
+      if (
+        [
+          [0, 0],
+          [0.6, 0],
+          [-0.6, 0],
+          [0, 0.6],
+          [0, -0.6],
+        ].every(hitsTarget)
+      )
+        return [x, y];
+    }
+    throw new Error(
+      `No foreground surface of ${id} is visible in this camera framing`,
+    );
+  }, id);
 const settle = async (target = page) => {
   // Wait for the scene's navigation contract, then require the live camera to
   // remain converged. This also covers restored poses and paused orbit damping.
@@ -127,7 +240,14 @@ const settle = async (target = page) => {
             coordinates &&
             previous &&
             coordinates.every(
-              (value, axis) => Math.abs(value - previous[axis]) < 0.0001,
+              (value, axis) =>
+                Math.abs(value - previous[axis]) <
+                Math.max(
+                  1e-9,
+                  Math.hypot(
+                    ...pose.position.map((v, i) => v - pose.target[i]),
+                  ) * 1e-5,
+                ),
             );
           stableSince = stable ? (stableSince ?? now) : null;
           previous = coordinates;
@@ -242,7 +362,18 @@ try {
     const after = await page.evaluate(() => window.__explorerScene);
     expect((await snapshot(page)).state.spacing).toBe(2.6);
     expect(before, "Scene transform inspection must be exposed").toBeTruthy();
-    expect(after).not.toEqual(before);
+    for (let layer = 0; layer < 32; layer++) {
+      const id = `layer_${layer}`;
+      expect(after.nodes[id].world[2]).toBeCloseTo(
+        before.nodes[id].world[2] * 2.6,
+        6,
+      );
+      expect(after.nodes[id].world.slice(0, 2)).toEqual(
+        before.nodes[id].world.slice(0, 2),
+      );
+    }
+    expect(after.nodes.stack.world).toEqual(before.nodes.stack.world);
+    expect(after.nodes.stack.scale).toEqual(before.nodes.stack.scale);
     await capture("overview-spaced");
     return { before, after };
   });
@@ -261,7 +392,7 @@ try {
         "Projected layer mesh diagnostic must be available",
       ).toBeTruthy();
       expect(node.visible).toBe(true);
-      const [x, y] = node.screen;
+      const [x, y] = await surfacePoint("layer_31");
       const canvas = await page.locator("canvas").boundingBox();
       expect(x).toBeGreaterThan(canvas.x);
       expect(x).toBeLessThan(canvas.x + canvas.width);
@@ -302,7 +433,13 @@ try {
     await settle();
     const after = (await snapshot(page)).camera;
     expect(before).toBeTruthy();
-    expect(after).not.toEqual(before);
+    const radius = Math.hypot(
+      ...before.position.map((value, axis) => value - before.target[axis]),
+    );
+    const movement = Math.hypot(
+      ...after.position.map((value, axis) => value - before.position[axis]),
+    );
+    expect(movement / radius).toBeGreaterThan(0.05);
     expect((await snapshot(page)).playing).toBe(false);
     await capture("overview-second-oblique");
     return { before, after };
@@ -440,10 +577,7 @@ try {
     async () => {
       await view("Expert routing");
       const before = await snapshot(page);
-      const point = await page.evaluate(() => {
-        const e = window.__explorer.state.expert;
-        return window.__explorerScene.nodes[`expert_${e}`].screen;
-      });
+      const point = await surfacePoint(`expert_${before.state.expert}`);
       await page.mouse.click(point[0], point[1]);
       await settle();
       expect((await snapshot(page)).state.view).toBe("expert");

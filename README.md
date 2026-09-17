@@ -49,7 +49,7 @@ See the [Mixtral paper](https://arxiv.org/abs/2401.04088) for the per-token, per
 
 ## Compact layer stack and semantic zoom
 
-Render all 32 layers as individually selectable thin slices in a compact stack. Clicking any layer moves it into a focus position and expands one reusable detailed assembly. Dim or compress the remaining slices while keeping the selected layer number visible. Use zero-based indices in data and Layer 1–32 in the interface.
+Render all 32 layers as individually selectable thin slices in a compact stack. Clicking any layer flies into a reusable detailed assembly nested inside that slice. Keep surrounding slices present and the selected layer number visible; navigation must not fade or relocate the graph. Use zero-based indices in data and Layer 1–32 in the interface.
 
 Semantic zoom changes which concepts are visible as the visitor moves closer:
 
@@ -65,7 +65,7 @@ Use smooth transitions and stable thresholds to avoid flickering between levels.
 
 Use a dark neutral environment, restrained emissive highlights, simple matrix slabs, and a clear flow direction. Shape, labels, and placement must convey meaning alongside color. Use thin matrix surfaces with dimension labels and sampled heatmaps. Separate related surfaces in depth to reveal repetition and shared connections; label what each axis means. Avoid rendering individual parameters or thousands of matrix cells.
 
-The default view is an oblique, genuinely three-dimensional stack with visible layer spacing. Visitors can spread the stack, pull out one layer, inspect its head groups or expert bank, and return to the same location. A face-on matrix view and HTML detail panel provide readable values without losing the selected layer, group, or token. Keep a compact stack locator visible during close inspection. A perspective-styled flat diagram alone does not meet the spatial contract.
+The default view is an oblique, genuinely three-dimensional stack with visible layer spacing. Visitors can spread the stack, fly inside one layer, inspect its head groups or expert bank, and return to the same location. A face-on matrix view and HTML detail panel provide readable values without losing the selected layer, group, or token. Keep a compact stack locator visible during close inspection. A perspective-styled flat diagram alone does not meet the spatial contract.
 
 ## Attention, GQA, RoPE, and caching
 
@@ -173,7 +173,7 @@ These are acceptance targets; measured results and client limitations are record
 - Initial GLB substantially below 10 MB where practical.
 - Aim for 60 fps on a representative desktop and at least 30 fps in a reduced-quality mode, with hardware, browser, viewport, and pixel ratio recorded.
 - Reuse meshes and materials; cap particles and attention arcs to the short example.
-- Expand one layer and one expert at a time. Avoid geometry for every parameter, hidden dimension, or context position.
+- Reuse one detailed layer and focus on one expert at a time. Keep the eight small expert interiors present for continuous navigation. Avoid geometry for every parameter, hidden dimension, or context position.
 - Profile triangles, draw calls, texture memory, loading time, and frame time before adding compression.
 - Keep labels readable and collision-aware; support keyboard navigation and reduced motion.
 - Retain semantic metadata and object selection through optimization.

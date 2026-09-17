@@ -64,7 +64,14 @@ const settled = async (target = page) => {
             coordinates &&
             previous &&
             coordinates.every(
-              (value, axis) => Math.abs(value - previous[axis]) < 0.0001,
+              (value, axis) =>
+                Math.abs(value - previous[axis]) <
+                Math.max(
+                  1e-9,
+                  Math.hypot(
+                    ...pose.position.map((v, i) => v - pose.target[i]),
+                  ) * 1e-5,
+                ),
             );
           stableSince = stable ? (stableSince ?? now) : null;
           previous = coordinates;
@@ -167,22 +174,34 @@ try {
       const before = await scene();
       await button("Expert routing").click();
       await page.waitForFunction(
-        () =>
-          window.__explorerScene?.navigationPhase === "context" &&
-          window.__explorerScene?.presentedView === "layer",
+        () => window.__explorerScene?.navigationPhase === "aim",
       );
       const wide = await scene();
-      expect(wide.presentedView).toBe("layer");
+      expect(wide.presentedView).toBe("router");
       expect(wide.selected.view).toBe("router");
       expect(identity(wide)).toEqual(identity(before));
       expect(distance(wide.camera)).toBeGreaterThan(
-        distance(before.camera) + 2,
+        distance(before.camera) * 1.2,
       );
       await capture("navigation-wide-context");
       await settled();
       const after = await scene();
       expect(after.presentedView).toBe("router");
       expect(identity(after)).toEqual(identity(before));
+      for (const [id, node] of Object.entries(before.nodes)) {
+        for (const snapshot of [wide, after]) {
+          expect(
+            snapshot.nodes[id].world,
+            `${id} fixed world position`,
+          ).toEqual(node.world);
+          expect(snapshot.nodes[id].scale, `${id} fixed scale`).toEqual(
+            node.scale,
+          );
+          expect(snapshot.nodes[id].visible, `${id} persists`).toBe(
+            node.visible,
+          );
+        }
+      }
       await capture("navigation-router-arrival");
       return { before, wide, after };
     },
@@ -190,6 +209,8 @@ try {
   await check(
     "Rapid navigation retains the intended router destination instead of an interrupted wide pose",
     async () => {
+      await view("Expert routing");
+      const destination = await scene();
       await view("Attention group");
       const before = await scene();
       await button("Expert routing").click();
@@ -202,7 +223,11 @@ try {
       const after = await scene();
       expect(after.presentedView).toBe("router");
       expect(after.selected.view).toBe("router");
-      expect(distance(after.camera)).toBeLessThan(15);
+      for (const field of ["position", "target"]) {
+        after.camera[field].forEach((value, axis) =>
+          expect(value).toBeCloseTo(destination.camera[field][axis], 4),
+        );
+      }
       expect(identity(after)).toEqual(identity(before));
       await capture("rapid-navigation-router-arrival");
       return { before, interrupted, after };
@@ -279,10 +304,21 @@ try {
         expect(packets(current)).toHaveLength(1);
         expect(packets(current)[0].kind).toBe(kind);
         if (time === 10.8) {
-          expect(packets(current)[0].position[1]).toBeCloseTo(-3.2, 4);
+          const feedbackY = await page.evaluate(() => {
+            const { scene, camera } = window.__explorerInspect();
+            let connector;
+            scene.traverse((node) => {
+              if (node.userData.id === "generation_feedback_segment_0")
+                connector = node;
+            });
+            if (!connector)
+              throw Error("Rendered generation feedback connector is missing");
+            return connector.getWorldPosition(camera.position.clone()).y;
+          });
+          expect(packets(current)[0].position[1]).toBeCloseTo(feedbackY, 6);
           await expect(
-            page.getByText("New token returns · next decode step reuses K/V", {
-              exact: true,
+            page.locator(".flow-controls p").filter({
+              hasText: "New token returns · next decode step reuses K/V",
             }),
           ).toBeVisible();
         }
@@ -307,9 +343,9 @@ try {
       expect(packets(read)).toHaveLength(2);
       expect(packets(read).every((p) => p.kind === "vector")).toBe(true);
       await expect(
-        page.getByText("Read retained K/V · no prompt recomputation", {
-          exact: true,
-        }),
+        page
+          .locator(".flow-controls p")
+          .filter({ hasText: "Read retained K/V · no prompt recomputation" }),
       ).toBeVisible();
       await capture("flow-cache-read");
       await restoreFlow(9);
@@ -321,9 +357,9 @@ try {
       expect(append.cache.newValue).not.toBeNull();
       expect(packets(append)).toHaveLength(2);
       await expect(
-        page.getByText("Decode: append this token’s new K/V vectors", {
-          exact: true,
-        }),
+        page
+          .locator(".flow-controls p")
+          .filter({ hasText: "Decode: append this token’s new K/V vectors" }),
       ).toBeVisible();
       await capture("flow-cache-append");
       return { read, append };
@@ -338,9 +374,9 @@ try {
       expect(packets(input)).toHaveLength(2);
       expect(packets(input).every((p) => p.kind === "vector")).toBe(true);
       await expect(
-        page.getByText("One activation vector → two selected experts", {
-          exact: true,
-        }),
+        page
+          .locator(".flow-controls p")
+          .filter({ hasText: "One activation vector → two selected experts" }),
       ).toBeVisible();
       await capture("flow-router-input");
       await restoreFlow(9);
@@ -349,12 +385,43 @@ try {
       expect(output.routeExperts).toEqual(input.routeExperts);
       expect(packets(output)).not.toEqual(packets(input));
       await expect(
-        page.getByText("Two transformed vectors → weighted sum", {
-          exact: true,
-        }),
+        page
+          .locator(".flow-controls p")
+          .filter({ hasText: "Two transformed vectors → weighted sum" }),
       ).toBeVisible();
       await capture("flow-router-output");
       return { input, output };
+    },
+  );
+  await check(
+    "Expert flow remains inside the selected nested expert neighborhood",
+    async () => {
+      await view("Inside an expert");
+      const evidence = [];
+      for (const time of [3, 9]) {
+        await restoreFlow(time);
+        const current = await scene();
+        const expert = current.nodes[`expert_${current.selected.expert}`];
+        expect(packets(current)).toHaveLength(2);
+        for (const packet of packets(current)) {
+          expect(packet.kind).toBe("vector");
+          const delta = packet.position.map(
+            (value, axis) => value - expert.world[axis],
+          );
+          // Sibling experts are separated in depth; each marker must remain
+          // in the selected enclosure's depth interval, not the old full-size diagram.
+          expect(Math.abs(delta[2])).toBeLessThan(
+            current.nodes.focus.scale[2] * 0.41,
+          );
+          expect(Math.hypot(...delta)).toBeLessThan(
+            current.nodes.focus.scale[0] * 2,
+          );
+        }
+        await capture(`flow-expert-${time}`);
+        evidence.push(current);
+      }
+      expect(packets(evidence[1])).not.toEqual(packets(evidence[0]));
+      return evidence;
     },
   );
   await check(

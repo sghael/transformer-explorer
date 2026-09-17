@@ -9,24 +9,17 @@ import {
 import { Canvas, events, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, useGLTF, Line, Html } from "@react-three/drei";
 import * as THREE from "three";
-import type { OrbitControls as Controls, Line2 } from "three-stdlib";
+import type { OrbitControls as Controls } from "three-stdlib";
 import { sample, type View } from "./data";
-import {
-  routerPaths,
-  pointAlongPath,
-  attentionPath,
-  type Point,
-} from "./spatial";
+import { routerPaths, pointAlongPath, type Point } from "./spatial";
 import Flow from "./Flow";
 import {
-  timing,
-  duration,
-  cameraBetween,
-  approachPose,
-  captureScene,
-  blendScene,
-  resetOpacity,
-  type ScenePose,
+  FOCUS_SCALE,
+  layerOrigin,
+  inLayer,
+  planFlight,
+  flightPose,
+  type FlightLeg,
 } from "./navigation";
 export type Selection = {
   layer: number;
@@ -86,10 +79,9 @@ const labelStyle: React.CSSProperties = {
   whiteSpace: "nowrap",
   font: "12px system-ui",
   color: "#e3edf1",
-  background: "rgba(13,24,33,.9)",
-  padding: "4px 7px",
-  border: "1px solid #40515d",
-  borderRadius: 4,
+  background: "rgba(13,24,33,.65)",
+  padding: "2px 4px",
+  textShadow: "0 1px 3px #101820",
   pointerEvents: "none",
 };
 function Label({
@@ -111,13 +103,17 @@ function Label({
   useFrame(() => {
     if (node && ref.current) {
       node.getWorldPosition(pos);
+      const world = pos.clone();
+      ref.current.parent?.worldToLocal(pos);
       ref.current.position.copy(pos).add(new THREE.Vector3(...offset));
-      const distance = camera.position.distanceTo(pos);
+      const scale = ref.current.getWorldScale(new THREE.Vector3()).x;
+      const distance = camera.position.distanceTo(world) / scale;
       if (shown.current && distance > maxDistance + 2) shown.current = false;
       else if (!shown.current && distance < maxDistance - 2)
         shown.current = true;
       if (html.current)
-        html.current.style.display = shown.current ? "inline" : "none";
+        html.current.style.display =
+          shown.current && isVisibleInScene(ref.current) ? "inline" : "none";
     }
   });
   return node ? (
@@ -159,86 +155,31 @@ function heatmap(values: number[][], token: number) {
   return texture;
 }
 
-function LayerOrigin({
-  nodes,
-  layer,
-}: {
-  nodes: Map<string, THREE.Object3D>;
-  layer: number;
-}) {
-  const line = useRef<Line2>(null);
-  const a = useMemo(() => new THREE.Vector3(), []);
-  const b = useMemo(() => new THREE.Vector3(), []);
-  useFrame(() => {
-    const source = nodes.get(`layer_${layer}`)!;
-    const focus = nodes.get("focus")!;
-    source.getWorldPosition(a);
-    focus.localToWorld(b.set(-9, 0, 0));
-    if (line.current) {
-      line.current.visible =
-        isVisibleInScene(source) &&
-        isVisibleInScene(focus) &&
-        focus.scale.x > 0.061;
-      line.current.geometry.setPositions([
-        a.x,
-        a.y,
-        a.z,
-        b.x - 0.5,
-        a.y,
-        a.z,
-        b.x - 0.5,
-        b.y,
-        a.z,
-        b.x - 0.5,
-        b.y,
-        b.z,
-        b.x,
-        b.y,
-        b.z,
-      ]);
-      line.current.computeLineDistances();
-    }
-  });
-  return (
-    <>
-      <Line
-        ref={line}
-        name="layer-origin"
-        points={[
-          [0, 0, 0],
-          [0, 0, 0],
-        ]}
-        color="#f3c779"
-        lineWidth={2}
-        dashed
-        dashSize={0.15}
-        gapSize={0.1}
-      />
-      <Label node={nodes.get(`layer_${layer}`)} offset={[0, -1.1, 0]}>
-        Layer {layer + 1} in the stack
-      </Label>
-    </>
-  );
-}
 // One absolute journey: chapter seeking never repeats a within-chapter loop.
 function tokenPose(time: number, spacing: number, layer: number): Point {
   const first = -4.96 * spacing,
     last = 4.96 * spacing,
     selected = (layer - 15.5) * 0.32 * spacing;
   const stops: [number, Point][] = [
-    [0, [-8, 0.5, 0]],
-    [6, [-8, 0.5, 0]],
-    [11, [-5.5, 0.5, 0]],
-    [13, [0, 0.18, first]],
-    [20, [0, 0.18, selected]],
-    [66, [0, 0.18, selected]],
-    [70, [0, 0.18, last]],
-    [72, [4.8, 0.5, 0]],
-    [73, [7, 0.5, 0]],
-    [74, [9.5, 0.5, 0]],
-    [75, [9.5, -3.5, 0]],
-    [79, [-8, -3.5, 0]],
-    [80, [-8, 0.5, 0]],
+    [0, [-8, 0, 0]],
+    [6, [-8, 0, 0]],
+    [11, [-5.5, 0, 0]],
+    [11.5, [-3, 0, 0]],
+    [12.5, [-3, 0, first - 0.11]],
+    [13, [0, 0, first - 0.11]],
+    [20, [0, 0, selected]],
+    [66, [0, 0, selected]],
+    [70, [0, 0, last + 0.11]],
+    [70.5, [3, 0, last + 0.11]],
+    [71.5, [3, 0, 0]],
+    [72, [4.8, 0, 0]],
+    [73, [7, 0, 0]],
+    [74, [9.5, 0, 0]],
+    [74.5, [11, 0, 0]],
+    [75.5, [11, 0, last + 1.84]],
+    [78.5, [-9, 0, last + 1.84]],
+    [79.5, [-9, 0, 0]],
+    [80, [-8, 0, 0]],
   ];
   const end = stops.findIndex(([t]) => t > time);
   if (end < 0) return stops.at(-1)![1];
@@ -247,6 +188,43 @@ function tokenPose(time: number, spacing: number, layer: number): Point {
     [tb, b] = stops[end];
   const u = (time - ta) / (tb - ta);
   return a.map((v, i) => v + (b[i] - v) * u) as Point;
+}
+// Numerical annotations become legible at their local scale. The structural
+// GLB is always present; this controls only explanatory labels and sample marks.
+function AnnotationLevel({
+  origin,
+  scale = 1,
+  center = [0, 0, 0],
+  near = 0,
+  far = Infinity,
+  children,
+}: {
+  origin: Point;
+  scale?: number;
+  center?: Point;
+  near?: number;
+  far?: number;
+  children: React.ReactNode;
+}) {
+  const { camera } = useThree();
+  const [visible, setVisible] = useState(false);
+  const shown = useRef(false);
+  useFrame(() => {
+    const anchor = new THREE.Vector3(...center)
+      .multiplyScalar(scale)
+      .add(new THREE.Vector3(...origin));
+    const distance = camera.position.distanceTo(anchor) / scale;
+    const next = distance >= near && distance <= far;
+    if (next !== shown.current) {
+      shown.current = next;
+      setVisible(next);
+    }
+  });
+  return visible ? (
+    <group position={origin} scale={scale}>
+      {children}
+    </group>
+  ) : null;
 }
 function Effects({
   p,
@@ -259,6 +237,7 @@ function Effects({
     () => sample(p.state.layer, p.state.group, p.state.token),
     [p.state.layer, p.state.group, p.state.token],
   );
+  const compact = useThree((state) => state.size.width < 600);
   const view = p.state.view,
     g = p.state.group,
     z = (g - 3.5) * 1.2;
@@ -287,6 +266,7 @@ function Effects({
           token={p.state.token}
           spacing={p.state.spacing}
           experts={p.top2}
+          expert={p.state.expert}
         />
       )}
       {overview && (
@@ -380,8 +360,8 @@ function Effects({
           {label("experts", "8 parallel experts", [5, 1.8, 3.4])}
           {label("merge", "Weighted merge", [0, -2, 0])}
           {label("add2", "+ residual 2", [0.6, -0.9, 0])}
-          {label("residual_attention", "Attention bypass", [-5.5, 4.3, 0])}
-          {label("residual_moe", "MoE bypass", [4.5, 4.3, 0])}
+          {label("residual_attention", "Attention bypass", [-5.5, 0.6, -5.4])}
+          {label("residual_moe", "MoE bypass", [4.5, 0.6, 5.4])}
           {label(
             `layer_${p.state.layer}`,
             `Layer ${p.state.layer + 1}`,
@@ -391,110 +371,30 @@ function Effects({
       )}
       {view === "attention" && (
         <>
-          {Array.from({ length: 4 }, (_, h) =>
-            label(`q_${g * 4 + h}`, `Q ${g * 4 + h + 1} weights`, [
-              -1.4,
-              0.65 - h * 0.43,
-              0,
-            ]),
+          {label(
+            `q_${g * 4}`,
+            compact
+              ? `Q ${g * 4 + 1}–${g * 4 + 4}`
+              : `Q projections · heads ${g * 4 + 1}–${g * 4 + 4}`,
+            [-0.25, 1.05, 0.315],
           )}
-          {label(`k_${g}`, "Shared K weights", [0, 1.15, 0])}
-          {label(`v_${g}`, "Shared V weights", [0.2, -1, 0])}
-          {label(`score_${g}`, "Runtime attention scores", [0, 0.75, 0])}
-          {Array.from({ length: 4 }, (_, h) => (
-            <Line
-              key={"qlead" + h}
-              points={[
-                [-7.05, 1.65 - h * 0.43, z + (h - 1.5) * 0.21],
-                [-6.225, 1, z + (h - 1.5) * 0.21],
-              ]}
-              color="#749cb7"
-              lineWidth={1}
-            />
-          ))}
-          {data.attention[p.state.token]
-            .slice(0, p.state.token + 1)
-            .map((weight, key) => (
-              <Line
-                key={"attention-link" + key}
-                points={attentionPath(g, key)}
-                color="#79d9cd"
-                lineWidth={1 + weight * 5}
-              />
-            ))}
-          <Html position={[-7.6, -0.65, z + 1.2]} center style={labelStyle}>
-            Query token {p.state.token + 1}
-          </Html>
-          {data.attention[p.state.token].map((weight, key) => {
-            const allowed = key <= p.state.token;
-            const point = attentionPath(g, key).at(-1)!;
-            return (
-              <group key={"key-position" + key} position={point}>
-                <mesh>
-                  <sphereGeometry args={[0.065, 8, 6]} />
-                  <meshBasicMaterial color={allowed ? "#79d9cd" : "#59636b"} />
-                </mesh>
-                <Html
-                  position={[0, -0.3, 0]}
-                  center
-                  style={{
-                    ...labelStyle,
-                    fontSize: 10,
-                    padding: "2px 4px",
-                    textAlign: "center",
-                    color: allowed ? "#d6fff7" : "#8c969e",
-                  }}
-                >
-                  K{key + 1}
-                  <br />
-                  {allowed ? weight.toFixed(2) : "×"}
-                </Html>
-              </group>
-            );
-          })}
-          <Html
-            position={[-8.8, -2.1, z + 1.2]}
-            center
-            style={{ ...labelStyle, fontSize: 10 }}
-          >
-            Keys: token positions
-            <br />
-            Values: weights · × masked
-          </Html>
-          {(["q", "k", "v"] as const).map((kind, i) => {
-            const before = data.rope[kind];
-            const after =
-              kind === "q"
-                ? data.rope.rotatedQ
-                : kind === "k"
-                  ? data.rope.rotatedK
-                  : data.rope.rotatedV;
-            const x = -1.5,
-              y = 0.6 - i * 1.3;
-            return (
-              <group key={kind}>
-                <Line
-                  points={[
-                    [x, y, z],
-                    [x + before[0] * 0.4, y + before[1] * 0.4, z],
-                  ]}
-                  color="#586b7a"
-                  lineWidth={2}
-                />
-                <Line
-                  points={[
-                    [x, y, z + 0.02],
-                    [x + after[0] * 0.4, y + after[1] * 0.4, z + 0.02],
-                  ]}
-                  color={kind === "v" ? "#bc97ed" : "#efc578"}
-                  lineWidth={3}
-                />
-                <Html position={[x + 1.1, y, z]} center style={labelStyle}>
-                  {kind.toUpperCase()} {kind === "v" ? "unchanged" : "rotated"}
-                </Html>
-              </group>
-            );
-          })}
+          {label(`k_${g}`, compact ? "K" : "Shared K", [-0.2, -0.85, 0.28])}
+          {label(`v_${g}`, compact ? "V" : "Shared V", [0.2, -0.85, 0])}
+          {label(
+            `rope_k_${g}`,
+            compact ? "RoPE" : "RoPE · Q/K",
+            [0.05, 0.35, -0.18],
+          )}
+          {label(
+            `score_${g}`,
+            compact ? "Weights" : "Attention weights · one head",
+            [0.6, 0.65, 0],
+          )}
+          {label(
+            `weighted_sum_${g}`,
+            compact ? "Σ V" : "Weighted V sum",
+            [0.75, -0.3, 0],
+          )}
         </>
       )}
       {view === "matrix" && (
@@ -509,33 +409,55 @@ function Effects({
       )}
       {view === "cache" && (
         <>
-          {(["k", "v"] as const).map((kind, i) => {
-            const x = -5.8 + i * 2.3;
+          {(["k", "v"] as const).map((kind) => {
+            const sheet = nodes.get(`cache_${kind}_${g}`) as THREE.Mesh;
+            const center = nodes
+              .get("focus")!
+              .worldToLocal(sheet.getWorldPosition(new THREE.Vector3()));
+            sheet.geometry.computeBoundingBox();
+            const size = sheet.geometry.boundingBox!.getSize(
+              new THREE.Vector3(),
+            );
+            const top = center.y + size.y / 2;
             return (
               <group key={kind}>
-                <Html position={[x + 0.8, -1.35, z]} center style={labelStyle}>
-                  {kind.toUpperCase()} · {p.decode ? 9 : 8} activation rows
+                <Html
+                  position={[center.x, top + 0.055, center.z + 0.04]}
+                  center
+                  style={labelStyle}
+                >
+                  {kind.toUpperCase()} · {p.decode ? 9 : 8} retained rows
                 </Html>
                 {Array.from({ length: p.decode ? 9 : 8 }, (_, row) => (
                   <group key={row}>
-                    <mesh position={[x + 0.8, -1.8 - row * 0.22, z + 0.3]}>
-                      <boxGeometry args={[1.8, 0.17, 0.04]} />
+                    <mesh
+                      position={[
+                        center.x,
+                        top - 0.05 - row * 0.088,
+                        center.z + 0.025,
+                      ]}
+                    >
+                      <boxGeometry args={[size.x - 0.018, 0.067, 0.008]} />
                       <meshBasicMaterial
                         color={
                           row === 8
-                            ? "#efc578"
+                            ? "#d7b97c"
                             : row === p.state.token
-                              ? "#d5dca5"
+                              ? "#ced3a8"
                               : kind === "k"
-                                ? "#43a995"
-                                : "#8d6ab4"
+                                ? "#398f83"
+                                : "#85659c"
                         }
                       />
                     </mesh>
                     <Html
-                      position={[x - 0.3, -1.8 - row * 0.22, z + 0.3]}
+                      position={[
+                        center.x - size.x / 2 - 0.045,
+                        top - 0.05 - row * 0.088,
+                        center.z + 0.04,
+                      ]}
                       center
-                      style={{ ...labelStyle, fontSize: 10, padding: 1 }}
+                      style={{ ...labelStyle, fontSize: 10, padding: 0 }}
                     >
                       {row + 1}
                     </Html>
@@ -544,21 +466,13 @@ function Effects({
               </group>
             );
           })}
-          <Html position={[-3.85, -4, z]} center style={labelStyle}>
-            Sampled head channels →
+          <Html position={[-4.9, -2.84, z + 0.04]} center style={labelStyle}>
+            Sampled channels →
           </Html>
         </>
       )}
       {["router", "layer"].includes(view) && (
         <>
-          {p.top2.map((e, i) => (
-            <Line
-              key={"route" + e}
-              points={[...routerPaths(e).input, ...routerPaths(e).output]}
-              color={i === 0 ? "#f3c779" : "#64cfbf"}
-              lineWidth={3}
-            />
-          ))}
           {view === "router" && (
             <>
               {label(
@@ -612,13 +526,13 @@ function Effects({
           {label(
             "expert_detail",
             `Expert ${p.state.expert + 1} · distinct learned weights`,
-            [0, 3.2, 0],
+            [0, 0.65, 0],
           )}
-          {label("gate", "Gate 4096 → 14336", [-1.1, 1, 0])}
-          {label("up", "Up 4096 → 14336", [-0.5, -1, 0])}
+          {label("gate", "Gate 4096 → 14336", [-0.3, 0.35, 0])}
+          {label("up", "Up 4096 → 14336", [-0.2, -0.35, 0])}
           {label("silu", "SiLU", [0, 0.2, -0.2])}
-          {label("multiply", "Multiply", [0, -0.7, 0])}
-          {label("down", "Down → 4096", [1, 0.5, 0])}
+          {label("multiply", "Multiply", [0, -0.25, 0])}
+          {label("down", "Down → 4096", [0.1, 0.18, 0])}
         </>
       )}
     </>
@@ -635,40 +549,74 @@ function Model(p: Props) {
       if (o instanceof THREE.Mesh) {
         o.material = (o.material as THREE.Material).clone();
         o.castShadow = false;
+        o.userData.baseColor = (
+          o.material as THREE.MeshStandardMaterial
+        ).color.getHex();
       }
     });
     return s;
   }, [original]);
   const controls = useRef<Controls>(null);
+  const overviewPicking = useRef(false);
+  overviewPicking.current = p.state.view === "overview";
+  useEffect(() => {
+    // At model scale the complete layer footprint is selectable. At cell scale
+    // only the visible rails participate, leaving the nested graph pickable.
+    const meshes: THREE.Mesh[] = [];
+    scene.traverse((object) => {
+      if (
+        !(object instanceof THREE.Mesh) ||
+        object.userData.component !== "decoder_layer"
+      )
+        return;
+      const mesh = object;
+      meshes.push(mesh);
+      mesh.geometry.computeBoundingBox();
+      const inverse = new THREE.Matrix4();
+      const localRay = new THREE.Ray();
+      const point = new THREE.Vector3();
+      mesh.raycast = (raycaster, intersections) => {
+        if (!overviewPicking.current) {
+          THREE.Mesh.prototype.raycast.call(mesh, raycaster, intersections);
+          return;
+        }
+        inverse.copy(mesh.matrixWorld).invert();
+        localRay.copy(raycaster.ray).applyMatrix4(inverse);
+        if (!localRay.intersectBox(mesh.geometry.boundingBox!, point)) return;
+        point.applyMatrix4(mesh.matrixWorld);
+        const distance = raycaster.ray.origin.distanceTo(point);
+        if (distance >= raycaster.near && distance <= raycaster.far)
+          intersections.push({ distance, point: point.clone(), object: mesh });
+      };
+    });
+    return () =>
+      meshes.forEach((mesh) => {
+        mesh.raycast = THREE.Mesh.prototype.raycast;
+      });
+  }, [scene]);
   const lastPick = useRef<Record<string, any> | null>(null);
-  const { camera, gl, size, scene: renderScene } = useThree();
+  const { camera, gl, size, scene: renderScene, raycaster } = useThree();
   useEffect(() => {
     (window as any).__explorerInspect = () => ({
       camera,
       scene: renderScene,
       gl,
+      raycaster,
     });
     return () => {
       delete (window as any).__explorerInspect;
     };
-  }, [camera, renderScene, gl]);
+  }, [camera, renderScene, gl, raycaster]);
   const destination = useRef<CameraPose | null>(null);
   const moving = useRef(false);
-  const [presentationView, setPresentationView] = useState<View>(p.state.view);
   const navigation = useRef<{
     elapsed: number;
-    from: CameraPose;
-    via: CameraPose;
-    approach: CameraPose;
-    to: CameraPose;
-    context: View;
+    legs: FlightLeg[];
     target: View;
     phase: string;
-    outgoing: ScenePose;
-    surroundings: ScenePose;
-    incoming: ScenePose;
+    to: CameraPose;
   } | null>(null);
-  const visibleView = presentationView;
+  const visibleView = p.state.view;
   const viewPoses = useRef(new Map<string, CameraPose>());
   const previousView = useRef<{ key: string; revision: number } | null>(null);
   const nodes = useMemo(() => {
@@ -677,8 +625,19 @@ function Model(p: Props) {
       map.set(o.userData.id || o.name, o);
       map.set(o.name, o);
     });
+    for (const id of [
+      "expert_detail",
+      "gate",
+      "up",
+      "silu",
+      "multiply",
+      "down",
+    ]) {
+      const selected = map.get(`${id}_${p.state.expert}`);
+      if (selected) map.set(id, selected);
+    }
     return map;
-  }, [scene]);
+  }, [scene, p.state.expert]);
   const values = useMemo(
     () => sample(p.state.layer, p.state.group, p.state.token),
     [p.state.layer, p.state.group, p.state.token],
@@ -688,91 +647,100 @@ function Model(p: Props) {
     [values, p.state.token],
   );
   useEffect(() => () => texture.dispose(), [texture]);
-  function applySceneView(view: View) {
-    resetOpacity(scene);
-    const overview = ["overview", "input", "output"].includes(view),
-      detail = ["attention", "cache", "matrix"].includes(view);
+  function applySelectionLayout() {
+    // All structural geometry occupies one persistent coordinate system.
+    // Navigation never changes visibility, opacity, position or scale.
     scene.traverse((o) => {
-      o.visible = true;
       const d = o.userData,
         id = d.id || o.name;
-      if (d.component === "camera_anchor" || d.component === "diagnostic")
-        o.visible = false;
-      if (
-        [
-          "input",
-          "embedding",
-          "final_norm",
-          "lm_head",
-          "output",
-          "overview_flow",
-        ].includes(id)
-      )
-        o.visible = overview;
-      if (id === "focus") o.visible = !overview;
-      if (id === "expert_detail") o.visible = view === "expert";
-      if (/^layer_\d+$/.test(id)) {
-        o.position.set(
-          view === "layer" && d.layer === p.state.layer ? 1.3 : 0,
-          view === "layer" && d.layer === p.state.layer ? 0.5 : 0,
-          (d.layer - 15.5) * 0.32 * p.state.spacing,
-        );
-        if (o instanceof THREE.Mesh) {
-          const m = o.material as THREE.MeshStandardMaterial;
-          m.color.set(d.layer === p.state.layer ? "#f3c779" : "#54677b");
-          m.emissive.set(d.layer === p.state.layer ? "#654315" : "#000000");
+      o.visible =
+        d.component !== "camera_anchor" && d.component !== "diagnostic";
+      if (id === `layer_summary_${p.state.layer}`) o.visible = false;
+      if (o instanceof THREE.Mesh) {
+        const m = o.material as THREE.MeshStandardMaterial;
+        m.color.setHex(o.userData.baseColor);
+        if (typeof d.group === "number" && d.group !== p.state.group)
+          m.color.lerp(new THREE.Color("#253943"), 0.8);
+        if (
+          typeof d.expert === "number" &&
+          d.expert !== p.state.expert &&
+          d.component !== "expert"
+        )
+          m.color.lerp(new THREE.Color("#35434b"), 0.65);
+        m.opacity = 1;
+        m.transparent = false;
+        m.depthWrite = true;
+        if (d.component === "attention_scores") {
+          m.map = null;
+          m.needsUpdate = true;
         }
+        if (/^layer_\d+$/.test(id)) {
+          m.color.set(d.layer === p.state.layer ? "#d0b87e" : "#394a55");
+          m.emissive.set(d.layer === p.state.layer ? "#332a16" : "#000000");
+        }
+        if (/^expert_\d+$/.test(id))
+          m.color.set(p.top2.includes(d.expert) ? "#c8ad75" : "#596779");
       }
-      if (/^group_\d+$/.test(id))
-        o.visible = !detail || d.group === p.state.group;
-      if (d.component === "kv_cache") o.visible = view === "cache";
-      if (d.component === "attention_scores")
-        o.visible = view === "attention" || view === "matrix";
-      if (/^expert_\d+$/.test(id) && o instanceof THREE.Mesh)
-        (o.material as THREE.MeshStandardMaterial).color.set(
-          p.top2.includes(d.expert) ? "#e6b96f" : "#596779",
-        );
+      if (/^layer_\d+$/.test(id))
+        o.position.set(0, 0, (d.layer - 15.5) * 0.32 * p.state.spacing);
     });
-    const focus = nodes.get("focus")!;
-    focus.position.set(0, 0, 0);
-    focus.scale.setScalar(1);
-    for (const child of focus.children) {
-      const id = child.userData.id;
-      if (detail) child.visible = id === "attention";
-      else if (view === "router")
-        child.visible = ["router", "experts", "merge"].includes(id);
-      else if (view === "expert") child.visible = id === "expert_detail";
-    }
-    if (detail) {
-      const attention = nodes.get("attention")!;
-      attention.children.forEach(
-        (o) => (o.visible = o.userData.id === `group_${p.state.group}`),
-      );
-      const group = nodes.get(`group_${p.state.group}`)!;
-      group.children.forEach((o) => {
-        if (view === "matrix")
-          o.visible = o.userData.id === `score_${p.state.group}`;
-        else if (view === "cache")
-          o.visible = o.userData.id === `cache_${p.state.group}`;
-      });
-    }
-    // A cache link is meaningful only when both its projection and cache sheet
-    // are visible. The focused cache view hides projections as well.
-    for (let group = 0; group < 8; group++) {
-      nodes.get(`cache_link_${group}`)!.visible =
-        isVisibleInScene(nodes.get(`k_${group}`)!) &&
-        isVisibleInScene(nodes.get(`cache_k_${group}`)!);
-    }
     const stack = nodes.get("stack")!;
-    stack.visible = overview || view === "layer";
-    stack.position.set(
-      view === "layer" ? -11 : 0,
-      view === "layer" ? -2 : 0,
-      view === "layer" ? 4 : 0,
-    );
-    stack.scale.setScalar(view === "layer" ? 0.3 : 1);
-    const line = nodes.get("stack_sequence_segment_0");
-    if (line) line.scale.z = p.state.spacing;
+    stack.position.set(0, 0, 0);
+    stack.scale.setScalar(1);
+    const focus = nodes.get("focus")!;
+    focus.position.set(...layerOrigin(p.state.layer, p.state.spacing));
+    focus.scale.setScalar(FOCUS_SCALE);
+    const setPath = (id: string, points: Point[]) => {
+      points.slice(1).forEach((end, i) => {
+        const start = points[i];
+        const segment = nodes.get(`${id}_segment_${i}`) as
+          | THREE.Mesh
+          | undefined;
+        if (!segment) return;
+        segment.geometry.computeBoundingBox();
+        const size = segment.geometry.boundingBox!.getSize(new THREE.Vector3());
+        segment.position.set(
+          ...(start.map((v, axis) => (v + end[axis]) / 2) as Point),
+        );
+        segment.scale.set(1, 1, 1);
+        const axis = start.findIndex(
+          (v, axis) => Math.abs(end[axis] - v) > 0.00001,
+        );
+        if (axis >= 0)
+          segment.scale.setComponent(
+            axis,
+            Math.abs(end[axis] - start[axis]) / size.getComponent(axis),
+          );
+      });
+    };
+    const first = -4.96 * p.state.spacing - 0.11,
+      last = 4.96 * p.state.spacing + 0.11;
+    setPath("overview_embed", [
+      [-5, 0, 0],
+      [-3, 0, 0],
+      [-3, 0, first],
+      [0, 0, first],
+    ]);
+    setPath("overview_final", [
+      [0, 0, last],
+      [3, 0, last],
+      [3, 0, 0],
+      [4.675, 0, 0],
+    ]);
+    const feedback = last + 1.73;
+    setPath("generation_feedback", [
+      [10, 0, 0],
+      [11, 0, 0],
+      [11, 0, feedback],
+      [-9, 0, feedback],
+      [-9, 0, 0],
+      [-8.55, 0, 0],
+    ]);
+    for (let i = 0; i < 31; i++)
+      setPath(`stack_gap_${i}`, [
+        [0, 0, (i - 15.5) * 0.32 * p.state.spacing + 0.11],
+        [0, 0, (i - 14.5) * 0.32 * p.state.spacing - 0.11],
+      ]);
     const score = nodes.get(`score_${p.state.group}`) as THREE.Mesh;
     if (!score.geometry.getAttribute("uv")) {
       score.geometry = score.geometry.clone();
@@ -784,13 +752,6 @@ function Model(p: Props) {
       }
       score.geometry.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
     }
-    for (const [i, kind] of ["k", "v"].entries()) {
-      const sheet = nodes.get(`cache_${kind}_${p.state.group}`)!;
-      sheet.position.x = view === "cache" ? -0.9 + i * 2.3 : 0.3;
-      sheet.position.y = view === "cache" ? -0.4 : 0;
-      sheet.scale.y = view === "cache" ? 1.8 : 1;
-      sheet.position.z = view === "cache" ? 0 : i === 0 ? -0.2 : 0.2;
-    }
     const material = score.material as THREE.MeshStandardMaterial;
     material.map = texture;
     material.color.set("#ffffff");
@@ -798,14 +759,52 @@ function Model(p: Props) {
     scene.updateMatrixWorld(true);
   }
   useLayoutEffect(() => {
-    if (!navigation.current) applySceneView(visibleView);
-  }, [scene, nodes, p.state, p.top2, texture, visibleView]);
+    applySelectionLayout();
+  }, [scene, nodes, p.state.layer, p.state.spacing, p.top2, texture]);
+  function poseFor(view: View): CameraPose {
+    const aspect = size.width / size.height;
+    const distanceScale = Math.max(1, 1.6 / aspect);
+    const z = (p.state.group - 3.5) * 1.2;
+    let target = [0, 0.6, 0],
+      position = [4, 7, 16 * distanceScale];
+    if (view === "attention") {
+      target = [-4.8, 0.65, z];
+      position = [-4.8, 5.5, z + 0.65];
+    }
+    if (view === "cache") {
+      target = [-4.9, -2.36, z];
+      position = [-4.9, -2.36, z + 1.1];
+    }
+    if (view === "matrix") {
+      target = [-3.35, 1.45, z];
+      position = [-3.35, 1.45, z + 1.15];
+    }
+    if (view === "expert") {
+      const depth = (p.state.expert - 3.5) * 1.1;
+      target = [5, 0, depth];
+      position = [5 + 0.55 * distanceScale, 0.45 * distanceScale, depth + 0.72];
+    }
+    if (view === "router") {
+      target = [5, 0, 0];
+      position = [5 + 7 * distanceScale, 9 * distanceScale, 2 * distanceScale];
+    }
+    if (["overview", "input", "output"].includes(view)) {
+      const anchor = nodes.get(anchors[view])!;
+      const d = anchor.userData;
+      return view === "overview"
+        ? { position: [13, 11, 16 * distanceScale], target: [0, 0, 0] }
+        : {
+            position: anchor.getWorldPosition(new THREE.Vector3()).toArray(),
+            target: [d.target_x, d.target_y, d.target_z],
+          };
+    }
+    return {
+      position: inLayer(position, p.state.layer, p.state.spacing),
+      target: inLayer(target, p.state.layer, p.state.spacing),
+    };
+  }
   useEffect(() => {
-    const viewKey =
-      p.state.view +
-      (["attention", "cache", "matrix"].includes(p.state.view)
-        ? `:${p.state.group}`
-        : "");
+    const viewKey = `${p.state.view}:${p.state.layer}:${p.state.group}:${p.state.expert}:${p.state.spacing}`;
     const previous = previousView.current;
     const forced = previous?.revision !== p.cameraRevision;
     if (
@@ -822,128 +821,51 @@ function Model(p: Props) {
           target: controls.current.target.toArray(),
         },
       );
-    const travel = (pose: CameraPose) => {
-      destination.current = pose;
-      moving.current = true;
-      if (
-        previous &&
-        previous.key !== viewKey &&
-        !forced &&
-        !p.playing &&
-        !p.reduced &&
-        controls.current
-      ) {
-        const fromView = previous.key.split(":")[0] as View;
-        const context: View = [fromView, p.state.view].some((v) =>
-          ["overview", "input", "output"].includes(v),
-        )
-          ? "overview"
-          : "layer";
-        const scale = Math.max(1, 1.6 / (size.width / size.height));
-        const outgoing = captureScene(scene);
-        applySceneView(context);
-        const surroundings = captureScene(scene);
-        applySceneView(p.state.view);
-        const incoming = captureScene(scene);
-        // The expanded layer grows from the selected slice while the camera is
-        // wide. Its miniature source stack stays connected to it afterwards.
-        if (context === "overview" && p.state.view === "layer") {
-          const selected = nodes.get(`layer_${p.state.layer}`)!;
-          const selectedPose = outgoing.get(selected)!;
-          const focus = nodes.get("focus")!;
-          incoming.forEach((pose, object) => {
-            if (pose.alpha > 0 && surroundings.get(object)!.alpha === 0)
-              surroundings.set(object, { ...pose, alpha: 0 });
-          });
-          surroundings.set(focus, {
-            position: selectedPose.position.clone(),
-            scale: new THREE.Vector3(0.06, 0.06, 0.06),
-            alpha: 1,
-          });
-        }
-        blendScene(outgoing, surroundings, 0);
-        const via =
-          context === "overview"
-            ? { position: [17, 15, 22 * scale], target: [0, 0, 0] }
-            : { position: [5, 10, 23 * scale], target: [0, 0.6, 0] };
-        navigation.current = {
-          outgoing,
-          surroundings,
-          incoming,
-          elapsed: 0,
-          phase: "zoom-out",
-          context,
-          target: p.state.view,
-          from: {
-            position: camera.position.toArray(),
-            target: controls.current.target.toArray(),
-          },
-          via,
-          approach: approachPose(via, pose),
-          to: pose,
-        };
-        controls.current.enabled = false;
-        setPresentationView(fromView);
-      } else {
-        navigation.current = null;
-        applySceneView(p.state.view);
-        if (controls.current) controls.current.enabled = !p.playing;
-        setPresentationView(p.state.view);
-      }
-    };
     if (forced) viewPoses.current.clear();
     previousView.current = { key: viewKey, revision: p.cameraRevision };
+    if (!forced && !p.playing && previous?.key === viewKey) return;
+    const pose =
+      (!forced && !p.playing && viewPoses.current.get(viewKey)) ||
+      poseFor(p.state.view);
+    destination.current = pose;
+    moving.current = true;
     if (
+      previous &&
+      previous.key !== viewKey &&
       !forced &&
       !p.playing &&
-      previous?.key !== viewKey &&
-      viewPoses.current.has(viewKey)
+      !p.reduced &&
+      controls.current
     ) {
-      travel(viewPoses.current.get(viewKey)!);
-      return;
+      const from = {
+        position: camera.position.toArray(),
+        target: controls.current.target.toArray(),
+      };
+      navigation.current = {
+        elapsed: 0,
+        target: p.state.view,
+        to: pose,
+        phase: "aim",
+        legs: planFlight(
+          previous.key.split(":")[0] as View,
+          p.state.view,
+          from,
+          pose,
+          poseFor,
+        ),
+      };
+      controls.current.enabled = false;
+    } else {
+      navigation.current = null;
+      if (controls.current) controls.current.enabled = !p.playing;
     }
-    if (!forced && !p.playing && previous?.key === viewKey) return;
-    const anchor = nodes.get(anchors[p.state.view]);
-    const d = anchor?.userData ?? {};
-    let position = anchor
-      ? anchor.getWorldPosition(new THREE.Vector3()).toArray()
-      : [18, 15, 20];
-    let target = [d.target_x ?? 0, d.target_y ?? 0, d.target_z ?? 0];
-    const z = (p.state.group - 3.5) * 1.2;
-    const aspect = size.width / size.height;
-    const distanceScale = Math.max(1, 1.6 / aspect);
-    if (p.state.view === "layer") {
-      target = [0, 0.6, 0];
-      position = [4, 7, 16 * distanceScale];
-    }
-    if (p.state.view === "attention") {
-      target = [-5, -0.6, z];
-      position = [-2.2, 2.7, z + 8.5 * distanceScale];
-    }
-    if (p.state.view === "cache") {
-      target = [-4.7, -2.6, z];
-      position = [-3.6, 0.2, z + 8 * distanceScale];
-    }
-    if (p.state.view === "matrix") {
-      target = [-3.35, 1.45, z];
-      position = [-3.35, 1.45, z + 1.6 * Math.max(1, 1 / aspect)];
-    }
-    if (p.state.view === "expert") {
-      target = [5, -2, 0];
-      position = [7.5, 1, 7 * distanceScale];
-    }
-    if (p.state.view === "router") {
-      target = [5, 0, 0];
-      position = [5 + 7 * distanceScale, 9 * distanceScale, 2 * distanceScale];
-    }
-    if (p.state.view === "overview") {
-      position = [13, 11, 16 * distanceScale];
-    }
-    travel({ position, target });
   }, [
     nodes,
     p.state.view,
+    p.state.layer,
     p.state.group,
+    p.state.expert,
+    p.state.spacing,
     p.playing,
     p.cameraRevision,
     size.width,
@@ -952,9 +874,8 @@ function Model(p: Props) {
   useEffect(() => {
     if (p.restorePose) {
       navigation.current = null;
-      applySceneView(p.state.view);
+      applySelectionLayout();
       if (controls.current) controls.current.enabled = !p.playing;
-      setPresentationView(p.state.view);
       destination.current = p.restorePose;
       moving.current = true;
     }
@@ -993,57 +914,14 @@ function Model(p: Props) {
   useFrame((_, dt) => {
     if (navigation.current && controls.current) {
       const route = navigation.current;
-      route.elapsed += dt;
-      const t = route.elapsed;
-      const aimStart = timing.out + timing.context;
-      const inwardStart = aimStart + timing.aim;
-      const phase =
-        t < timing.out
-          ? "zoom-out"
-          : t < aimStart
-            ? "context"
-            : t < inwardStart
-              ? "aim"
-              : "zoom-in";
-      if (phase !== route.phase) {
-        route.phase = phase;
-        // All labels and overlays are in place before the inward flight starts.
-        setPresentationView(t < aimStart ? route.context : route.target);
-      }
-      let pose: CameraPose;
-      if (t < timing.out) {
-        pose = cameraBetween(route.from, route.via, t / timing.out);
-        blendScene(route.outgoing, route.surroundings, t / timing.out);
-      } else if (t < aimStart) {
-        pose = route.via;
-        blendScene(
-          route.surroundings,
-          route.incoming,
-          (t - timing.out) / timing.context,
-        );
-      } else {
-        // Geometry, opacity and annotations stop changing before aiming/zooming.
-        blendScene(route.incoming, route.incoming, 1);
-        pose =
-          t < inwardStart
-            ? cameraBetween(
-                route.via,
-                route.approach,
-                (t - aimStart) / timing.aim,
-              )
-            : cameraBetween(
-                route.approach,
-                route.to,
-                (t - inwardStart) / timing.into,
-              );
-      }
-      camera.position.set(...(pose.position as Point));
-      controls.current.target.set(...(pose.target as Point));
+      route.elapsed += Math.min(dt, 0.05);
+      const flight = flightPose(route.legs, route.elapsed);
+      route.phase = flight.phase;
+      camera.position.set(...(flight.pose.position as Point));
+      controls.current.target.set(...(flight.pose.target as Point));
       controls.current.update();
-      if (t >= duration) {
+      if (flight.done) {
         navigation.current = null;
-        setPresentationView(route.target);
-        applySceneView(route.target);
         controls.current.enabled = !p.playing;
         moving.current = false;
       }
@@ -1054,15 +932,31 @@ function Model(p: Props) {
       controls.current.target.lerp(new THREE.Vector3(...d.target), alpha);
       controls.current.update();
       if (
-        camera.position.distanceTo(new THREE.Vector3(...d.position)) < 0.015 &&
+        camera.position.distanceTo(new THREE.Vector3(...d.position)) <
+          0.00001 &&
         controls.current.target.distanceTo(new THREE.Vector3(...d.target)) <
-          0.015
+          0.00001
       ) {
         camera.position.set(...(d.position as Point));
         controls.current.target.set(...(d.target as Point));
         controls.current.update();
         moving.current = false;
       }
+    }
+    if (camera instanceof THREE.PerspectiveCamera && controls.current) {
+      camera.fov = THREE.MathUtils.radToDeg(
+        2 *
+          Math.atan(
+            Math.tan(THREE.MathUtils.degToRad(25)) *
+              Math.max(1, 1.6 / (size.width / size.height)),
+          ),
+      );
+      camera.near = THREE.MathUtils.clamp(
+        camera.position.distanceTo(controls.current.target) * 0.001,
+        0.000001,
+        0.05,
+      );
+      camera.updateProjectionMatrix();
     }
     if (controls.current)
       p.cameraRef.current = {
@@ -1145,18 +1039,6 @@ function Model(p: Props) {
           : [],
       routeWeights: values.router.weights,
       attentionRow: values.attention[p.state.token],
-      attentionEndpoints: values.attention[p.state.token].map(
-        (weight, key) => ({
-          key,
-          allowed: key <= p.state.token,
-          weight,
-          position: attentionPath(p.state.group, key).at(-1),
-        }),
-      ),
-      attentionPaths: Array.from({ length: p.state.token + 1 }, (_, key) => ({
-        key,
-        points: attentionPath(p.state.group, key),
-      })),
       tokenPosition: tokenPose(p.time, p.state.spacing, p.state.layer),
       generationNewToken: p.time >= 74,
       chosenChunk: values.candidates.reduce((best, item) =>
@@ -1223,23 +1105,90 @@ function Model(p: Props) {
           }
         }}
       />
-      <Effects
-        p={{ ...p, state: { ...p.state, view: visibleView } }}
-        nodes={nodes}
-      />
-      {visibleView === "layer" && (
-        <LayerOrigin nodes={nodes} layer={p.state.layer} />
-      )}
+      <AnnotationLevel
+        origin={layerOrigin(p.state.layer, p.state.spacing)}
+        near={2}
+      >
+        <group
+          position={
+            layerOrigin(p.state.layer, p.state.spacing).map((v) => -v) as Point
+          }
+        >
+          <Effects
+            p={{
+              ...p,
+              state: {
+                ...p.state,
+                view: ["input", "output"].includes(p.state.view)
+                  ? p.state.view
+                  : "overview",
+              },
+            }}
+            nodes={nodes}
+          />
+        </group>
+      </AnnotationLevel>
+      {(
+        [
+          ["layer", [0, 0.6, 0], 9, 100],
+          ["attention", [-5, 0.5, (p.state.group - 3.5) * 1.2], 3.5, 13],
+          ["router", [5, 0, 0], 3, 15],
+          ["expert", [5, 0, (p.state.expert - 3.5) * 1.1], 0, 3],
+          ["cache", [-4.9, -2.36, (p.state.group - 3.5) * 1.2], 0, 1.8],
+          ["matrix", [-3.35, 1.45, (p.state.group - 3.5) * 1.2], 0, 3.5],
+        ] as [View, Point, number, number][]
+      ).map(([view, center, near, far]) => (
+        <AnnotationLevel
+          key={view}
+          origin={layerOrigin(p.state.layer, p.state.spacing)}
+          scale={FOCUS_SCALE}
+          center={center}
+          near={near}
+          far={far}
+        >
+          <Effects
+            p={{
+              ...p,
+              flowPlaying: p.flowPlaying && p.state.view === view,
+              flowTime: p.state.view === view ? p.flowTime : 0,
+              state: { ...p.state, view },
+            }}
+            nodes={nodes}
+          />
+        </AnnotationLevel>
+      ))}
+      <group
+        position={layerOrigin(p.state.layer, p.state.spacing)}
+        scale={FOCUS_SCALE}
+      >
+        {p.top2.map((expert, i) => (
+          <Line
+            key={expert}
+            name={`router-path-${expert}`}
+            segments
+            points={[
+              routerPaths(expert).input,
+              routerPaths(expert).output,
+            ].flatMap((points) =>
+              points.slice(1).flatMap((end, i) => [points[i], end]),
+            )}
+            color={i ? "#69bfb3" : "#d3b77b"}
+            lineWidth={1.3}
+          />
+        ))}
+      </group>
       <OrbitControls
         ref={controls}
         enabled={!p.playing && !navigation.current}
         makeDefault
-        minDistance={0.7}
+        minDistance={0.001}
         maxDistance={65}
         onStart={() => (moving.current = false)}
         onEnd={() => {
           if (p.playing || !controls.current) return;
-          const distance = camera.position.distanceTo(controls.current.target);
+          const distance =
+            camera.position.distanceTo(controls.current.target) /
+            (p.state.view === "overview" ? 1 : FOCUS_SCALE);
           // Different entry/exit distances prevent oscillation between detail levels.
           if (p.state.view === "overview" && distance < 10) p.onView("layer");
           else if (p.state.view === "layer" && distance < 6)
@@ -1257,7 +1206,7 @@ export default function Scene(p: Props) {
   return (
     <Canvas
       events={sceneEvents}
-      camera={{ position: [18, 15, 20], fov: 45, near: 0.05, far: 200 }}
+      camera={{ position: [18, 15, 20], fov: 50, near: 0.0001, far: 200 }}
       dpr={p.lowQuality ? 1 : [1, 1.5]}
       gl={{ antialias: true }}
     >
@@ -1267,10 +1216,6 @@ export default function Scene(p: Props) {
       <Suspense fallback={null}>
         <Model {...p} />
       </Suspense>
-      <gridHelper
-        args={[45, 30, "#25343d", "#17242c"]}
-        position={[0, -4.4, 0]}
-      />
     </Canvas>
   );
 }

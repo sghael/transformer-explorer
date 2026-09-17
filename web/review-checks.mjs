@@ -1,5 +1,4 @@
 import { chromium, expect } from "@playwright/test";
-import { PerspectiveCamera, Vector3 } from "three";
 import { mkdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -47,6 +46,86 @@ const save = () =>
     JSON.stringify(report, null, 2),
   );
 const button = (name) => page.getByRole("button", { name, exact: true });
+// Locate a real foreground surface, then use the browser mouse to pick it.
+// Sampling triangles handles frames, bevels, and small nested geometry.
+const surfacePoint = async (id) =>
+  page.evaluate((id) => {
+    const { camera, scene, gl, raycaster } = window.__explorerInspect();
+    if (!raycaster)
+      throw new Error("Scene inspection must expose its raycaster");
+    scene.updateMatrixWorld(true);
+    camera.updateMatrixWorld(true);
+    const rect = gl.domElement.getBoundingClientRect();
+    const visible = (object) => {
+      for (let node = object; node; node = node.parent)
+        if (!node.visible) return false;
+      return true;
+    };
+    const semantic = (object) => {
+      while (object && !object.userData.interactive) object = object.parent;
+      return object?.userData.id || object?.name;
+    };
+    const candidates = [];
+    let modelRoot;
+    scene.traverse((mesh) => {
+      if (!mesh.isMesh || !visible(mesh) || semantic(mesh) !== id) return;
+      modelRoot = mesh;
+      while (modelRoot.parent && modelRoot.parent !== scene)
+        modelRoot = modelRoot.parent;
+      const positions = mesh.geometry.attributes.position;
+      const indices = mesh.geometry.index;
+      const count = indices?.count ?? positions.count;
+      for (let i = 0; i + 2 < count; i += 3) {
+        const point = camera.position.clone().set(0, 0, 0);
+        for (let j = 0; j < 3; j++) {
+          const index = indices ? indices.getX(i + j) : i + j;
+          point.add(
+            camera.position.clone().fromBufferAttribute(positions, index),
+          );
+        }
+        point.divideScalar(3).applyMatrix4(mesh.matrixWorld).project(camera);
+        if (
+          Math.abs(point.x) >= 0.98 ||
+          Math.abs(point.y) >= 0.98 ||
+          Math.abs(point.z) >= 1
+        )
+          continue;
+        candidates.push(point);
+      }
+    });
+    candidates.sort((a, b) => a.x * a.x + a.y * a.y - b.x * b.x - b.y * b.y);
+    for (const point of candidates) {
+      const x = Math.round(rect.x + ((point.x + 1) * rect.width) / 2);
+      const y = Math.round(rect.y + ((1 - point.y) * rect.height) / 2);
+      // Chromium mouse coordinates land on pixels; require a real pixel interior.
+      const hitsTarget = ([dx, dy]) => {
+        raycaster.setFromCamera(
+          {
+            x: ((x + dx - rect.x) / rect.width) * 2 - 1,
+            y: 1 - ((y + dy - rect.y) / rect.height) * 2,
+          },
+          camera,
+        );
+        const hit = raycaster
+          .intersectObject(modelRoot, true)
+          .find((hit) => visible(hit.object));
+        return hit && semantic(hit.object) === id;
+      };
+      if (
+        [
+          [0, 0],
+          [0.6, 0],
+          [-0.6, 0],
+          [0, 0.6],
+          [0, -0.6],
+        ].every(hitsTarget)
+      )
+        return [x, y];
+    }
+    throw new Error(
+      `No foreground surface of ${id} is visible in this camera framing`,
+    );
+  }, id);
 const settle = async (target = page) => {
   // Wait for the scene's navigation contract, then require the live camera to
   // remain converged. This also covers restored poses and paused orbit damping.
@@ -74,7 +153,14 @@ const settle = async (target = page) => {
             coordinates &&
             previous &&
             coordinates.every(
-              (value, axis) => Math.abs(value - previous[axis]) < 0.0001,
+              (value, axis) =>
+                Math.abs(value - previous[axis]) <
+                Math.max(
+                  1e-9,
+                  Math.hypot(
+                    ...pose.position.map((v, i) => v - pose.target[i]),
+                  ) * 1e-5,
+                ),
             );
           stableSince = stable ? (stableSince ?? now) : null;
           previous = coordinates;
@@ -149,26 +235,7 @@ const pick = async (id, expectedView) => {
   expect(node, `Missing projected diagnostic for ${id}`).toBeTruthy();
   expect(node.visible, `${id} must be visible before picking`).toBe(true);
   const canvas = await page.locator("canvas").boundingBox();
-  let [x, y] = node.screen;
-  if (id === "final_norm") {
-    // The normalization operation is an open frame: click its top rail rather
-    // than the empty center. The GLB frame is 2.3 units high with a narrow rim.
-    const pose = (await state()).camera;
-    const camera = new PerspectiveCamera(
-      45,
-      canvas.width / canvas.height,
-      0.05,
-      200,
-    );
-    camera.position.fromArray(pose.position);
-    camera.lookAt(new Vector3(...pose.target));
-    camera.updateMatrixWorld();
-    const projected = new Vector3(...node.world)
-      .add(new Vector3(0, 1.08, 0))
-      .project(camera);
-    x = canvas.x + ((projected.x + 1) * canvas.width) / 2;
-    y = canvas.y + ((1 - projected.y) * canvas.height) / 2;
-  }
+  const [x, y] = await surfacePoint(id);
   expect(x).toBeGreaterThan(canvas.x);
   expect(x).toBeLessThan(canvas.x + canvas.width);
   expect(y).toBeGreaterThan(canvas.y);
@@ -255,15 +322,17 @@ try {
   await settle();
   report.build = (await state()).build;
   await check(
-    "Hidden attention sheets cannot intercept the visible Group 3 matrix",
+    "Persistent attention sheets preserve Group 3 foreground picking",
     async () => {
       await button("Reset").click();
       await page.getByLabel("KV group", { exact: true }).selectOption("2");
       await view("Read attention matrix");
       const before = await scene();
       expect(before.nodes.score_2.visible).toBe(true);
-      if (before.nodes.score_3)
-        expect(before.nodes.score_3.visible).toBe(false);
+      for (let group = 0; group < 8; group++) {
+        expect(before.nodes[`score_${group}`].visible).toBe(true);
+        expect(before.nodes[`score_${group}`].opacity).toBe(1);
+      }
       const evidence = await pick("score_2", "attention");
       expect((await state()).state.group).toBe(2);
       await capture("matrix-visible-pick");
@@ -337,12 +406,38 @@ try {
     },
   );
   await check(
-    "Cache connectors remain hidden when their cache endpoint is hidden",
+    "Persistent cache connectors retain both visible endpoints across camera views",
     async () => {
       const evidence = [];
       for (const control of ["Inside a layer", "Attention group", "KV cache"]) {
         await view(control);
         const current = await scene();
+        // Inspect the actual post-RoPE/write/read graph, including nodes outside
+        // the compact public diagnostic list.
+        const graph = await page.evaluate(() => {
+          const { scene, camera } = window.__explorerInspect();
+          const nodes = {};
+          scene.traverse((node) => {
+            const id = node.userData.id || node.name;
+            if (
+              !/^(rope_k|v|cache_v_write|cache_k_read|cache_v_read|weighted_sum)_\d+$/.test(
+                id,
+              )
+            )
+              return;
+            let visible = true;
+            for (let parent = node; parent; parent = parent.parent)
+              visible &&= parent.visible;
+            nodes[id] = {
+              semantic: node.userData,
+              visible,
+              world: node.getWorldPosition(camera.position.clone()).toArray(),
+              scale: node.getWorldScale(camera.position.clone()).toArray(),
+            };
+          });
+          return nodes;
+        });
+        Object.assign(current.nodes, graph);
         for (let group = 0; group < 8; group++) {
           const cache = current.nodes[`cache_${group}`],
             link = current.nodes[`cache_link_${group}`];
@@ -351,20 +446,62 @@ try {
             link,
             `Cache link ${group} inspection is available`,
           ).toBeTruthy();
-          const source = current.nodes[`k_${group}`],
+          const source = current.nodes[`rope_k_${group}`],
             destination = current.nodes[`cache_k_${group}`];
           expect(source).toBeTruthy();
           expect(destination).toBeTruthy();
-          if (
-            !source.visible ||
-            !destination.visible ||
-            !cache.visible ||
-            current.selected.view === "layer"
-          )
-            expect(link.visible).toBe(false);
-          if (link.visible) {
-            expect(source.visible).toBe(true);
-            expect(destination.visible).toBe(true);
+          expect(cache.visible).toBe(true);
+          expect(source.visible).toBe(true);
+          expect(destination.visible).toBe(true);
+          expect(link.visible).toBe(true);
+          expect(link.semantic.post_rope).toBe(true);
+          for (const [id, sourceId, targetId, operation] of [
+            [
+              `cache_link_${group}`,
+              `rope_k_${group}`,
+              `cache_k_${group}`,
+              "write",
+            ],
+            [
+              `cache_v_write_${group}`,
+              `v_${group}`,
+              `cache_v_${group}`,
+              "write",
+            ],
+            [
+              `cache_k_read_${group}`,
+              `cache_k_${group}`,
+              `score_${group}`,
+              "read",
+            ],
+            [
+              `cache_v_read_${group}`,
+              `cache_v_${group}`,
+              `weighted_sum_${group}`,
+              "read",
+            ],
+          ]) {
+            const connection = current.nodes[id];
+            expect(connection.visible).toBe(true);
+            expect(connection.semantic.source_id).toBe(sourceId);
+            expect(connection.semantic.target_id).toBe(targetId);
+            expect(connection.semantic.cache_operation).toBe(operation);
+            expect(current.nodes[sourceId].visible).toBe(true);
+            expect(current.nodes[targetId].visible).toBe(true);
+          }
+          if (evidence.length) {
+            for (const id of [
+              `rope_k_${group}`,
+              `cache_k_${group}`,
+              `cache_link_${group}`,
+            ]) {
+              expect(current.nodes[id].world).toEqual(
+                evidence[0].nodes[id].world,
+              );
+              expect(current.nodes[id].scale).toEqual(
+                evidence[0].nodes[id].scale,
+              );
+            }
           }
         }
         evidence.push({ view: current.selected.view, nodes: current.nodes });
@@ -373,7 +510,7 @@ try {
     },
   );
   await check(
-    "Attention links identify allowed keys and leave future keys unconnected",
+    "Causal attention data identifies allowed keys and masks future positions",
     async () => {
       const evidence = [];
       await view("Attention group");
@@ -383,37 +520,42 @@ try {
           .selectOption(String(token));
         await settle();
         const current = await scene();
-        expect(current.attentionEndpoints).toHaveLength(8);
-        expect(current.attentionPaths).toHaveLength(token + 1);
-        expect(
-          current.attentionPaths.map((path) => path.key).sort((a, b) => a - b),
-        ).toEqual(Array.from({ length: token + 1 }, (_, key) => key));
-        const source = current.attentionPaths[0].points[0];
+        const rows = await page
+          .locator(".evidence-strip .evidence-number")
+          .evaluateAll((nodes) =>
+            nodes.map((node) => ({
+              value: Number(node.dataset.value),
+              masked: node.dataset.masked === "true",
+              text: node.textContent,
+              width: node.querySelector("rect")?.getAttribute("width") ?? null,
+            })),
+          );
+        expect(rows).toHaveLength(8);
         let total = 0;
-        for (const endpoint of current.attentionEndpoints) {
-          expect(endpoint.allowed).toBe(endpoint.key <= token);
-          expect(endpoint.weight).toBeCloseTo(
-            current.attentionRow[endpoint.key],
-            7,
-          );
-          total += endpoint.weight;
-          const route = current.attentionPaths.find(
-            (path) => path.key === endpoint.key,
-          );
-          if (endpoint.allowed) {
-            expect(route).toBeTruthy();
-            expect(route.points[0]).toEqual(source);
-            expect(route.points.at(-1)).toEqual(endpoint.position);
-          } else {
-            expect(route).toBeUndefined();
-            expect(endpoint.weight).toBe(0);
+        for (const [key, row] of rows.entries()) {
+          expect(row.masked).toBe(key > token);
+          expect(row.value).toBeCloseTo(current.attentionRow[key], 10);
+          expect(row.text).toContain(row.value.toFixed(3));
+          total += row.value;
+          if (key <= token)
+            expect(Number(row.width)).toBeCloseTo(row.value * 100, 10);
+          else {
+            expect(row.width).toBeNull();
+            expect(row.value).toBe(0);
+            expect(row.text).toContain("×");
           }
         }
-        expect(total).toBeCloseTo(1, 7);
+        expect(total).toBeCloseTo(1, 10);
+        expect(current.nodes[`score_${current.selected.group}`].visible).toBe(
+          true,
+        );
+        expect(current.nodes[`score_${current.selected.group}`].opacity).toBe(
+          1,
+        );
         evidence.push({
           token,
-          endpoints: current.attentionEndpoints,
-          paths: current.attentionPaths,
+          rows,
+          score: current.nodes[`score_${current.selected.group}`],
         });
         await capture(`attention-token-${token + 1}`);
       }
@@ -435,9 +577,15 @@ try {
       const delta = paused.time - before.time;
       expect(delta).toBeGreaterThanOrEqual(0);
       before.routerOutputPositions.forEach((entry, index) => {
-        const path = paused.routerPaths.find(
-          (route) => route.expert === entry.expert,
-        ).output;
+        const path = paused.routerPaths
+          .find((route) => route.expert === entry.expert)
+          .output.map((point) =>
+            point.map(
+              (value, axis) =>
+                paused.nodes.focus.world[axis] +
+                value * paused.nodes.focus.scale[axis],
+            ),
+          );
         const first = inspectPath(path, entry.position);
         const last = inspectPath(
           path,
@@ -516,6 +664,64 @@ try {
       expect((await state()).time).toBe(0);
       await capture("reset-prefill");
       return { restoredRows: 9, resetRows: 8 };
+    },
+  );
+  await check(
+    "Probability bars retain exact values and readable common scales at desktop and narrow widths",
+    async () => {
+      const evidence = [];
+      for (const width of [1440, 390]) {
+        await page.setViewportSize({ width, height: 1000 });
+        for (const [control, selector, name] of [
+          ["Attention group", ".evidence-strip", "attention"],
+          ["Expert routing", ".router-evidence-table", "router"],
+        ]) {
+          await view(control);
+          const panel = page.locator(selector);
+          await panel.scrollIntoViewIfNeeded();
+          await expect(panel.locator(".evidence-number")).toHaveCount(8);
+          const rows = await panel
+            .locator(".evidence-number")
+            .evaluateAll((nodes) =>
+              nodes.map((node) => {
+                const value = Number(node.dataset.value);
+                const masked = node.dataset.masked === "true";
+                const bar = node.querySelector("rect");
+                return {
+                  value,
+                  masked,
+                  text: node.textContent,
+                  width: bar ? Number(bar.getAttribute("width")) : null,
+                  barPixels: node.querySelector("svg").getBoundingClientRect()
+                    .width,
+                };
+              }),
+            );
+          for (const row of rows) {
+            expect(row.text).toContain(row.value.toFixed(3));
+            if (row.masked) {
+              expect(row.value).toBe(0);
+              expect(row.width).toBeNull();
+              expect(row.text).toContain("×");
+            } else expect(row.width).toBeCloseTo(row.value * 100, 8);
+            expect(row.barPixels).toBe(rows[0].barPixels);
+            expect(row.barPixels).toBeGreaterThanOrEqual(60);
+          }
+          expect(rows.reduce((sum, row) => sum + row.value, 0)).toBeCloseTo(
+            1,
+            8,
+          );
+          expect(
+            await page.evaluate(
+              () => document.documentElement.scrollWidth <= window.innerWidth,
+            ),
+          ).toBe(true);
+          await capture(`evidence-${name}-${width}`);
+          evidence.push({ width, name, rows });
+        }
+      }
+      await page.setViewportSize({ width: 1440, height: 1000 });
+      return evidence;
     },
   );
   await check("No runtime or console errors", async () => {

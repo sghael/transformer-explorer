@@ -575,3 +575,117 @@ code {
   overflow-wrap: anywhere;
   color: #adbfca;
 }
+
+/* Numerical graphics share one domain and keep the values beside the marks. */
+.evidence-strip {
+  margin: 12px 0 20px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.evidence-strip figcaption {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 8px;
+  margin-bottom: 7px;
+  color: #c8d9e1;
+}
+.evidence-strip ol {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.evidence-strip li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 129px;
+  align-items: center;
+  min-height: 25px;
+  gap: 8px;
+}
+.evidence-key {
+  overflow-wrap: anywhere;
+  color: #c5d5de;
+}
+.evidence-number {
+  display: inline-grid;
+  grid-template-columns: 72px 52px;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  min-width: 129px;
+  color: #a6dadd;
+  font-variant-numeric: tabular-nums;
+}
+.evidence-bar {
+  display: block;
+  width: 100%;
+  height: 16px;
+}
+.evidence-baseline {
+  stroke: #607682;
+  stroke-width: 0.65;
+  fill: none;
+}
+.evidence-value {
+  text-align: right;
+  color: #dbe6ec;
+  white-space: nowrap;
+}
+.evidence-selected,
+.evidence-selected .evidence-value {
+  color: #ffda9b;
+}
+.evidence-masked,
+.evidence-masked .evidence-value {
+  color: #91a6b2;
+}
+.evidence-mask {
+  font-size: 13px;
+}
+.evidence-scale {
+  display: flex;
+  justify-content: space-between;
+  width: 72px;
+  min-width: 48px;
+  color: #a8bcc7;
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+.evidence-strip figcaption > .evidence-scale {
+  margin-right: 57px;
+  flex-shrink: 0;
+}
+.router-evidence-table {
+  font-size: 12px;
+}
+.router-evidence-table th,
+.router-evidence-table td {
+  border-bottom: 0;
+  padding: 5px 3px;
+}
+.router-evidence-table thead th {
+  vertical-align: bottom;
+  font-size: 11px;
+  font-weight: 500;
+}
+.router-evidence-table th:nth-child(3) {
+  text-align: left;
+}
+.router-evidence-table .evidence-number {
+  min-width: 129px;
+}
+.router-evidence-table .selected-row {
+  background: transparent;
+}
+.expert-selected-mark {
+  font-size: 12px;
+  color: #ffda9b;
+}
+.attention-evidence-table th,
+.attention-evidence-table td {
+  border-bottom: 0;
+}
+.attention-evidence-table caption {
+  margin-bottom: 5px;
+}

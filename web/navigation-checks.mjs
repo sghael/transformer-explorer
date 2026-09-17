@@ -69,7 +69,14 @@ const settle = async (target = page) => {
             coordinates &&
             previous &&
             coordinates.every(
-              (value, axis) => Math.abs(value - previous[axis]) < 0.0001,
+              (value, axis) =>
+                Math.abs(value - previous[axis]) <
+                Math.max(
+                  1e-9,
+                  Math.hypot(
+                    ...pose.position.map((v, i) => v - pose.target[i]),
+                  ) * 1e-5,
+                ),
             );
           stableSince = stable ? (stableSince ?? now) : null;
           previous = coordinates;
@@ -88,7 +95,6 @@ const shot = async (name) => {
     .screenshot({ path: path.join(artifacts, name + ".png") });
   report.screenshots.push({ name, scene: await scene() });
 };
-const visible = (node) => node?.visible && (node.opacity ?? 1) > 0.1;
 const distance = (a, b) => Math.hypot(...a.map((v, i) => v - b[i]));
 const seek = async (time) => {
   await page
@@ -102,311 +108,17 @@ const seek = async (time) => {
       input.dispatchEvent(new Event("change", { bubbles: true }));
     }, time);
 };
-const pairs = [
-  {
-    id: "overview-layer",
-    from: "Model overview",
-    to: "Inside a layer",
-    target: "layer",
-    context: "overview",
-    landmark: "layer_11",
-    incoming: "router",
-  },
-  {
-    id: "attention-router",
-    from: "Attention group",
-    to: "Expert routing",
-    target: "router",
-    landmark: "q_8",
-    incoming: "router",
-  },
-  {
-    id: "layer-attention",
-    from: "Inside a layer",
-    to: "Attention group",
-    target: "attention",
-    landmark: "router",
-    incoming: "q_8",
-  },
-  {
-    id: "attention-matrix",
-    from: "Attention group",
-    to: "Read attention matrix",
-    target: "matrix",
-    landmark: "k_2",
-    incoming: "score_2",
-  },
-];
 try {
   await page.goto(process.env.PREVIEW_URL, { waitUntil: "networkidle" });
   await page.waitForFunction(() => window.__explorer?.ready);
   await settle();
   report.build = await page.evaluate(() => window.__explorer.build);
-  // Inspect the actual loaded GLB so structural parents are distinguished from
-  // rendered meshes. A hidden subtree may normalize internal material flags
-  // without changing its appearance; visible mesh appearance must stay fixed.
-  const meshIds = new Set(
-    await page.evaluate(async () => {
-      const resource = performance
-        .getEntriesByType("resource")
-        .find((entry) => /\.glb(?:[?#]|$)/.test(entry.name));
-      if (!resource) throw Error("Loaded GLB resource was not recorded");
-      const bytes = await (await fetch(resource.name)).arrayBuffer();
-      const length = new DataView(bytes).getUint32(12, true);
-      const gltf = JSON.parse(
-        new TextDecoder().decode(new Uint8Array(bytes, 20, length)),
-      );
-      return gltf.nodes
-        .filter((node) => node.mesh !== undefined)
-        .map((node) => node.extras?.id ?? node.name);
-    }),
-  );
-  expect(meshIds.size).toBeGreaterThan(32);
-  for (const pair of pairs) {
-    console.log("START " + pair.id);
-    await button(pair.from).click();
-    await settle();
-    await shot(pair.id + "-before");
-    await page.evaluate(() => {
-      window.__navigationTrace = [];
-      window.__navigationTraceDone = false;
-      const started = performance.now();
-      let active = false,
-        settledAt = null;
-      const tick = (now) => {
-        const s = window.__explorerScene;
-        if (s) {
-          if (s.navigationPhase !== "settled") active = true;
-          if (active && s.navigationPhase === "settled" && settledAt === null)
-            settledAt = now;
-          window.__navigationTrace.push({
-            elapsedMs: now - started,
-            phase: s.navigationPhase,
-            navigationElapsed: s.navigationElapsed,
-            presentedView: s.presentedView,
-            selected: s.selected,
-            camera: s.camera,
-            nodes: s.nodes,
-          });
-        }
-        if (
-          now - started > 6000 ||
-          (settledAt !== null && now - settledAt > 250)
-        ) {
-          window.__navigationTraceDone = true;
-          return;
-        }
-        requestAnimationFrame(tick);
-      };
-      requestAnimationFrame(tick);
-    }, pair);
-    await button(pair.to).click();
-    await page.waitForFunction(
-      (expected) =>
-        window.__explorerScene.navigationPhase === "context" &&
-        window.__explorerScene.presentedView === expected,
-      pair.context ?? "layer",
-    );
-    await shot(pair.id + "-context");
-    await page.waitForFunction(
-      () => window.__explorerScene.navigationPhase === "zoom-in",
-    );
-    await shot(pair.id + "-initial-zoom-in");
-    await page.waitForFunction(() => window.__navigationTraceDone);
-    await shot(pair.id + "-arrival");
-    const trace = await page.evaluate(() => window.__navigationTrace);
-    const incomingFrames = trace.filter((f) => f.phase === "zoom-in");
-    const firstIn = incomingFrames[0]?.elapsedMs;
-    const early = incomingFrames.filter((f) => f.elapsedMs - firstIn <= 300);
-    const contextFrames = trace.filter(
-      (f) =>
-        f.phase === "context" && f.presentedView === (pair.context ?? "layer"),
-    );
-    const arrivalFrames = trace.filter(
-      (f) => f.phase === "settled" && f.elapsedMs > firstIn,
-    );
-    const fixedFrames = [...incomingFrames, ...arrivalFrames];
-    const sameNode = (a, b, id) => {
-      if (
-        !a ||
-        !b ||
-        distance(a.world, b.world) >= 0.00001 ||
-        distance(a.scale, b.scale) >= 0.00001 ||
-        distance(a.position, b.position) >= 0.00001
-      )
-        return false;
-      if (!meshIds.has(id)) return true;
-      const renderedA = a.visible && a.opacity > 0.000001;
-      const renderedB = b.visible && b.opacity > 0.000001;
-      return (
-        renderedA === renderedB &&
-        (!renderedA || Math.abs(a.opacity - b.opacity) < 0.00001)
-      );
-    };
-    const changedContextIds = Object.keys(contextFrames[0]?.nodes ?? {}).filter(
-      (id) =>
-        contextFrames.some(
-          (frame) => !sameNode(frame.nodes[id], contextFrames[0].nodes[id], id),
-        ),
-    );
-    const losses = [];
-    for (let i = 1; i < trace.length; i++) {
-      const old = trace[i - 1],
-        next = trace[i];
-      if (
-        visible(old.nodes[pair.landmark]) &&
-        !visible(next.nodes[pair.landmark])
-      )
-        losses.push({
-          elapsedMs: next.elapsedMs,
-          phase: next.phase,
-          cameraStep: distance(old.camera.position, next.camera.position),
-          landmark: pair.landmark,
-        });
-    }
-    const steps = trace.slice(1).map((frame, i) => ({
-      dt: frame.elapsedMs - trace[i].elapsedMs,
-      distance: distance(frame.camera.position, trace[i].camera.position),
-    }));
-    const evidence = {
-      pair,
-      frameCount: trace.length,
-      durationMs: trace.at(-1).elapsedMs,
-      zoomInMs: incomingFrames.at(-1)?.elapsedMs - firstIn,
-      contextFrames: contextFrames.length,
-      changedContextIds,
-      earlyZoomIn: early.map((f) => ({
-        elapsedMs: f.elapsedMs,
-        presentedView: f.presentedView,
-        landmark: f.nodes[pair.landmark],
-        incoming: f.nodes[pair.incoming],
-      })),
-      visibilityLosses: losses,
-      maxCameraStep: Math.max(...steps.map((s) => s.distance)),
-      maxCameraSpeed: Math.max(
-        ...steps.filter((s) => s.dt > 0).map((s) => (s.distance / s.dt) * 1000),
-      ),
-    };
-    report.traces.push({ pair: pair.id, frames: trace });
-    const assertions = [
-      [
-        "Layout changes while the camera holds the wide context view",
-        () => {
-          expect(contextFrames.length).toBeGreaterThan(2);
-          expect(changedContextIds.length).toBeGreaterThan(0);
-          const wide = contextFrames[0].camera;
-          expect(distance(wide.position, wide.target)).toBeGreaterThan(20);
-          for (const frame of contextFrames) {
-            expect(distance(frame.camera.position, wide.position)).toBeLessThan(
-              0.00001,
-            );
-            expect(distance(frame.camera.target, wide.target)).toBeLessThan(
-              0.00001,
-            );
-          }
-        },
-      ],
-      [
-        "Destination geometry and opacity remain fixed through inward flight and arrival",
-        () => {
-          expect(incomingFrames.length).toBeGreaterThan(2);
-          expect(arrivalFrames.length).toBeGreaterThan(0);
-          const baseline = incomingFrames[0];
-          for (const frame of fixedFrames) {
-            expect(frame.presentedView).toBe(pair.target);
-            for (const id of Object.keys(baseline.nodes))
-              expect(
-                sameNode(frame.nodes[id], baseline.nodes[id], id),
-                `${id} changed during ${frame.phase} at ${frame.navigationElapsed.toFixed(3)}s`,
-              ).toBe(true);
-          }
-        },
-      ],
-      [
-        "Inward camera travel keeps a fixed target and follows one straight approach",
-        () => {
-          const start = incomingFrames[0].camera,
-            end = incomingFrames.at(-1).camera;
-          const direction = end.position.map(
-            (value, axis) => value - start.position[axis],
-          );
-          const length = Math.hypot(...direction);
-          expect(length).toBeGreaterThan(0.5);
-          for (const frame of incomingFrames) {
-            expect(distance(frame.camera.target, start.target)).toBeLessThan(
-              0.00001,
-            );
-            const relative = frame.camera.position.map(
-              (value, axis) => value - start.position[axis],
-            );
-            const along =
-              relative.reduce(
-                (sum, value, axis) => sum + value * direction[axis],
-                0,
-              ) / length;
-            const offset = relative.map(
-              (value, axis) => value - (along * direction[axis]) / length,
-            );
-            expect(Math.hypot(...offset)).toBeLessThan(0.00001);
-          }
-          expect(
-            incomingFrames.at(-1).navigationElapsed -
-              incomingFrames[0].navigationElapsed,
-          ).toBeGreaterThan(1.1);
-          expect(trace.some((frame) => frame.phase === "aim")).toBe(true);
-        },
-      ],
-      [
-        "Incoming component remains recognizable throughout zoom-in",
-        () => {
-          expect(incomingFrames.length).toBeGreaterThan(0);
-          for (const frame of incomingFrames)
-            expect(
-              visible(frame.nodes[pair.incoming]),
-              `${pair.incoming} invisible at ${frame.elapsedMs.toFixed(1)}ms`,
-            ).toBe(true);
-        },
-      ],
-      [
-        "Target and semantic selection remain stable",
-        () => {
-          expect(trace.at(-1).presentedView).toBe(pair.target);
-          const identity = (f) => [
-            f.selected.layer,
-            f.selected.group,
-            f.selected.token,
-            f.selected.expert,
-          ];
-          expect(identity(trace.at(-1))).toEqual(identity(trace[0]));
-        },
-      ],
-    ];
-    for (const [name, assertion] of assertions) {
-      try {
-        assertion();
-        report.checks.push({
-          name: pair.id + ": " + name,
-          passed: true,
-          evidence,
-        });
-        console.log("PASS " + pair.id + ": " + name);
-      } catch (e) {
-        report.checks.push({
-          name: pair.id + ": " + name,
-          passed: false,
-          error: e.message,
-          evidence,
-        });
-        console.log("FAIL " + pair.id + ": " + e.message);
-      }
-    }
-    await save();
-  }
   for (const interruption of [
-    "seek-context",
-    "seek-mid-blend",
+    "seek-zoom-out",
+    "seek-aim",
     "seek-inbound",
-    "reset-context",
+    "reset-aim",
+    "restore-inbound",
   ]) {
     console.log("START " + interruption);
     try {
@@ -416,63 +128,71 @@ try {
       await settle();
       await button("Attention group").click();
       await settle();
+      let saved;
+      if (interruption === "restore-inbound") {
+        if (!(await button("Copy current view").isVisible()))
+          await page
+            .getByText("Development view context", { exact: true })
+            .click();
+        await button("Copy current view").click();
+        saved = await page
+          .getByRole("textbox", { name: "View context" })
+          .inputValue();
+      }
       await button("Expert routing").click();
+      const phase = interruption.endsWith("inbound")
+        ? "zoom-in"
+        : interruption === "seek-zoom-out"
+          ? "zoom-out"
+          : "aim";
       await page.waitForFunction(
-        () =>
-          window.__explorerScene.navigationPhase === "context" &&
-          window.__explorerScene.presentedView === "layer",
+        (phase) => window.__explorerScene.navigationPhase === phase,
+        phase,
       );
-      if (interruption === "seek-mid-blend") {
-        await page.waitForFunction(() => {
-          const s = window.__explorerScene;
-          return (
-            s.navigationPhase === "context" &&
-            s.nodes.q_8.opacity > 0.15 &&
-            s.nodes.q_8.opacity < 0.85
-          );
-        });
-      }
-      if (interruption === "seek-inbound") {
-        await page.waitForFunction(
-          () => window.__explorerScene.navigationPhase === "zoom-in",
-        );
-        await page.waitForTimeout(350);
-        expect((await scene()).navigationPhase).toBe("zoom-in");
-      }
+      if (phase === "zoom-in") await page.waitForTimeout(350);
+      expect((await scene()).navigationPhase).toBe(phase);
       const interrupted = await scene();
-      if (interruption === "reset-context") await button("Reset").click();
-      else await seek(22);
+      for (const [id, node] of Object.entries(interrupted.nodes)) {
+        expect(node.visible, `${id} remains visible during flight`).toBe(true);
+        expect(node.opacity, `${id} remains opaque during flight`).toBe(1);
+      }
+      if (interruption === "reset-aim") await button("Reset").click();
+      else if (interruption === "restore-inbound") {
+        await page.getByRole("textbox", { name: "View context" }).fill(saved);
+        await button("Restore view").click();
+      } else await seek(22);
       await settle();
       const after = await scene();
       expect(after.navigationPhase).toBe("settled");
-      const reset = interruption === "reset-context";
-      expect(after.presentedView).toBe(reset ? "overview" : "layer");
-      expect(after.selected.view).toBe(reset ? "overview" : "layer");
-      const opaque = reset
-        ? ["layer_0", "layer_31", "input", "embedding", "lm_head"]
-        : ["q_8", "k_2", "router"];
-      for (const id of opaque) {
-        expect(
-          visible(after.nodes[id]),
-          id + " must be visible after interruption",
-        ).toBe(true);
-        expect(
-          after.nodes[id].opacity,
-          id + " must restore full opacity",
-        ).toBeCloseTo(1, 6);
+      const destination =
+        interruption === "reset-aim"
+          ? "overview"
+          : interruption === "restore-inbound"
+            ? "attention"
+            : "layer";
+      expect(after.presentedView).toBe(destination);
+      expect(after.selected.view).toBe(destination);
+      for (const [id, node] of Object.entries(after.nodes)) {
+        expect(node.visible, `${id} remains present after cancellation`).toBe(
+          true,
+        );
+        expect(node.opacity, `${id} remains opaque after cancellation`).toBe(1);
       }
-      for (const id of reset
-        ? ["q_8", "router", "score_2", "expert_detail"]
-        : ["input", "score_2", "cache_k_2", "expert_detail"]) {
-        expect(
-          after.nodes[id].visible,
-          id + " must not survive as invalid blended geometry",
-        ).toBe(false);
+      if (saved) {
+        const restored = JSON.parse(saved);
+        for (const field of ["position", "target"])
+          after.camera[field].forEach((value, axis) =>
+            expect(value).toBeCloseTo(restored.camera[field][axis], 5),
+          );
+        for (const field of ["layer", "group", "token", "expert"])
+          expect(after.selected[field]).toBe(restored.state[field]);
       }
       await page.waitForTimeout(300);
       expect(
         distance((await scene()).camera.position, after.camera.position),
-      ).toBeLessThan(0.001);
+      ).toBeLessThan(
+        distance(after.camera.position, after.camera.target) * 1e-4,
+      );
       await shot(interruption + "-settled");
       report.checks.push({
         name: interruption + ": cancellation restores a complete settled scene",
@@ -522,7 +242,9 @@ try {
       expect(
         distance(before.camera.position, after.camera.position),
         mode + " must return camera ownership to OrbitControls",
-      ).toBeGreaterThan(0.1);
+      ).toBeGreaterThan(
+        distance(before.camera.position, before.camera.target) * 0.05,
+      );
       expect(after.selected.view).toBe(before.selected.view);
       evidence.push({ mode, before, after });
       await shot(mode + "-orbit");
