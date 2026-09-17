@@ -13,6 +13,7 @@ import type { OrbitControls as Controls } from "three-stdlib";
 import { sample, type View } from "./data";
 import { routerPaths, pointAlongPath, type Point } from "./spatial";
 import Flow from "./Flow";
+import { belongsToFocus } from "./context";
 import {
   FOCUS_SCALE,
   layerOrigin,
@@ -21,6 +22,15 @@ import {
   flightPose,
   type FlightLeg,
 } from "./navigation";
+import {
+  layout,
+  macroX,
+  macroPaths,
+  stackEnds,
+  layerHalf,
+  type MacroId,
+} from "./layout";
+export type ContextMode = "full" | "muted" | "isolated";
 export type Selection = {
   layer: number;
   group: number;
@@ -31,6 +41,7 @@ export type Selection = {
 };
 export type CameraPose = { position: number[]; target: number[] };
 type Props = {
+  contextMode: ContextMode;
   state: Selection;
   playing: boolean;
   flowTime: number;
@@ -113,7 +124,12 @@ function Label({
         shown.current = true;
       if (html.current)
         html.current.style.display =
-          shown.current && isVisibleInScene(ref.current) ? "inline" : "none";
+          shown.current &&
+          isVisibleInScene(ref.current) &&
+          isVisibleInScene(node) &&
+          !node.userData.contextLabelHidden
+            ? "inline"
+            : "none";
     }
   });
   return node ? (
@@ -157,37 +173,32 @@ function heatmap(values: number[][], token: number) {
 
 // One absolute journey: chapter seeking never repeats a within-chapter loop.
 function tokenPose(time: number, spacing: number, layer: number): Point {
-  const first = -4.96 * spacing,
-    last = 4.96 * spacing,
-    selected = (layer - 15.5) * 0.32 * spacing;
+  const [first, last] = stackEnds(spacing);
+  const x = (id: MacroId): Point => [macroX(id, spacing), 0, 0];
+  const feedback = macroPaths(spacing).generation_feedback;
   const stops: [number, Point][] = [
-    [0, [-8, 0, 0]],
-    [6, [-8, 0, 0]],
-    [11, [-5.5, 0, 0]],
-    [11.5, [-3, 0, 0]],
-    [12.5, [-3, 0, first - 0.11]],
-    [13, [0, 0, first - 0.11]],
-    [20, [0, 0, selected]],
-    [66, [0, 0, selected]],
-    [70, [0, 0, last + 0.11]],
-    [70.5, [3, 0, last + 0.11]],
-    [71.5, [3, 0, 0]],
-    [72, [4.8, 0, 0]],
-    [73, [7, 0, 0]],
-    [74, [9.5, 0, 0]],
-    [74.5, [11, 0, 0]],
-    [75.5, [11, 0, last + 1.84]],
-    [78.5, [-9, 0, last + 1.84]],
-    [79.5, [-9, 0, 0]],
-    [80, [-8, 0, 0]],
+    [0, x("input")],
+    [6, x("input")],
+    [11, x("embedding")],
+    [13, [first, 0, 0]],
+    [20, layerOrigin(layer, spacing)],
+    [66, layerOrigin(layer, spacing)],
+    [70, [last, 0, 0]],
+    [72, x("final_norm")],
+    [73, x("lm_head")],
+    [74, x("output")],
+    [74.5, feedback[1]],
+    [75.5, feedback[2]],
+    [78.5, feedback[3]],
+    [79.5, feedback[4]],
+    [80, x("input")],
   ];
   const end = stops.findIndex(([t]) => t > time);
   if (end < 0) return stops.at(-1)![1];
   if (end === 0) return stops[0][1];
   const [ta, a] = stops[end - 1],
     [tb, b] = stops[end];
-  const u = (time - ta) / (tb - ta);
-  return a.map((v, i) => v + (b[i] - v) * u) as Point;
+  return a.map((v, i) => v + ((b[i] - v) * (time - ta)) / (tb - ta)) as Point;
 }
 // Numerical annotations become legible at their local scale. The structural
 // GLB is always present; this controls only explanatory labels and sample marks.
@@ -260,15 +271,15 @@ function Effects({
     <>
       {overview && (
         <>
-          {label("input", "Token IDs", [-1, 1.9, 0])}
-          {label("embedding", "Embedding", [0, 0.3, 2])}
+          {label("input", compact ? "IDs" : "Token IDs", [0, 1.2, 0])}
+          {label("embedding", compact ? "Embed" : "Embedding", [0, -0.9, 0])}
           {label(
             "stack",
             `32 layers · selected ${p.state.layer + 1}`,
-            [0, 1.6, 0],
+            [0, 1.2, 0],
           )}
-          {label("final_norm", "Final norm", [0, 2.0, 0])}
-          {label("lm_head", "LM head", [0, 2.5, 0])}
+          {label("final_norm", compact ? "Norm" : "Final RMSNorm", [0, 0.8, 0])}
+          {label("lm_head", "LM head", [0, compact ? 2.6 : 1.9, 0])}
           {label(
             "output",
             view === "output"
@@ -285,12 +296,7 @@ function Effects({
           {p.time >= 74 && (
             <>
               <Line
-                points={[
-                  [9.5, 0.5, 0],
-                  [9.5, -3.5, 0],
-                  [-8, -3.5, 0],
-                  [-8, 0.5, 0],
-                ]}
+                points={macroPaths(p.state.spacing).generation_feedback}
                 color="#64cfbf"
                 lineWidth={2}
               />
@@ -305,36 +311,13 @@ function Effects({
               >
                 Appended chunk “{chosen.token}”
               </Html>
-              <Html position={[0, -4.1, 0]} center style={labelStyle}>
+              <Html
+                position={[0, 0.5, layout.feedback_z]}
+                center
+                style={labelStyle}
+              >
                 New token → embedding · retained K/V reused
               </Html>
-              <group position={[-6.5, 0, 4.5]}>
-                <Html position={[0.7, 2, 0]} center style={labelStyle}>
-                  Layer {p.state.layer + 1} cache · K / V<br />8 retained + 1
-                  new position
-                </Html>
-                {Array.from({ length: 9 }, (_, row) => (
-                  <group key={row}>
-                    {[0, 1].map((kind) => (
-                      <mesh
-                        key={kind}
-                        position={[kind * 1.4, 1.2 - row * 0.18, 0]}
-                      >
-                        <boxGeometry args={[1.15, 0.12, 0.08]} />
-                        <meshBasicMaterial
-                          color={
-                            row === 8
-                              ? "#f3c779"
-                              : kind === 0
-                                ? "#43a995"
-                                : "#8d6ab4"
-                          }
-                        />
-                      </mesh>
-                    ))}
-                  </group>
-                ))}
-              </group>
             </>
           )}
         </>
@@ -550,6 +533,48 @@ function Model(p: Props) {
     return s;
   }, [original]);
   const controls = useRef<Controls>(null);
+  const routes = useRef<THREE.Group>(null);
+  const contours = useRef<THREE.Group>(null);
+  const outlines = useMemo(() => {
+    const points: Point[] = [],
+      colors: THREE.Color[] = [],
+      links: Point[] = [];
+    for (let layer = 0; layer < 32; layer++) {
+      const origin = layerOrigin(layer, p.state.spacing);
+      const corner = (bits: number): Point =>
+        layout.layer_dimensions.map(
+          (size, axis) =>
+            origin[axis] + ((bits & (1 << axis) ? 1 : -1) * size) / 2,
+        ) as Point;
+      for (let bits = 0; bits < 8; bits++)
+        for (let axis = 0; axis < 3; axis++) {
+          if (bits & (1 << axis)) continue;
+          points.push(corner(bits), corner(bits | (1 << axis)));
+          const color = new THREE.Color(
+            layer === p.state.layer ? "#d0b87e" : "#6b8594",
+          );
+          colors.push(color, color);
+        }
+      if (layer !== p.state.layer)
+        links.push(
+          [origin[0] - layerHalf, 0, 0],
+          [origin[0] + layerHalf, 0, 0],
+        );
+      if (layer < 31)
+        links.push(
+          [origin[0] + layerHalf, 0, 0],
+          [layerOrigin(layer + 1, p.state.spacing)[0] - layerHalf, 0, 0],
+        );
+    }
+    return { points, colors, links };
+  }, [p.state.layer, p.state.spacing]);
+  const contextBase = useRef(
+    new Map<
+      THREE.Object3D,
+      { visible: boolean; color?: THREE.Color; emissive?: THREE.Color }
+    >(),
+  );
+  const contextApplied = useRef("");
   const overviewPicking = useRef(false);
   overviewPicking.current = p.state.view === "overview";
   useEffect(() => {
@@ -642,7 +667,7 @@ function Model(p: Props) {
   useEffect(() => () => texture.dispose(), [texture]);
   function applySelectionLayout() {
     // All structural geometry occupies one persistent coordinate system.
-    // Navigation never changes visibility, opacity, position or scale.
+    // Camera navigation preserves position and scale; context styling is separate.
     scene.traverse((o) => {
       const d = o.userData,
         id = d.id || o.name;
@@ -675,7 +700,7 @@ function Model(p: Props) {
           m.color.set(p.top2.includes(d.expert) ? "#c8ad75" : "#596779");
       }
       if (/^layer_\d+$/.test(id))
-        o.position.set(0, 0, (d.layer - 15.5) * 0.32 * p.state.spacing);
+        o.position.set(...layerOrigin(d.layer, p.state.spacing));
     });
     const stack = nodes.get("stack")!;
     stack.position.set(0, 0, 0);
@@ -706,33 +731,14 @@ function Model(p: Props) {
           );
       });
     };
-    const first = -4.96 * p.state.spacing - 0.11,
-      last = 4.96 * p.state.spacing + 0.11;
-    setPath("overview_embed", [
-      [-5, 0, 0],
-      [-3, 0, 0],
-      [-3, 0, first],
-      [0, 0, first],
-    ]);
-    setPath("overview_final", [
-      [0, 0, last],
-      [3, 0, last],
-      [3, 0, 0],
-      [4.675, 0, 0],
-    ]);
-    const feedback = last + 1.73;
-    setPath("generation_feedback", [
-      [10, 0, 0],
-      [11, 0, 0],
-      [11, 0, feedback],
-      [-9, 0, feedback],
-      [-9, 0, 0],
-      [-8.55, 0, 0],
-    ]);
+    for (const id of Object.keys(layout.macro_nodes) as MacroId[])
+      nodes.get(id)!.position.set(macroX(id, p.state.spacing), 0, 0);
+    for (const [id, points] of Object.entries(macroPaths(p.state.spacing)))
+      setPath(id, points);
     for (let i = 0; i < 31; i++)
       setPath(`stack_gap_${i}`, [
-        [0, 0, (i - 15.5) * 0.32 * p.state.spacing + 0.11],
-        [0, 0, (i - 14.5) * 0.32 * p.state.spacing - 0.11],
+        [layerOrigin(i, p.state.spacing)[0] + layerHalf, 0, 0],
+        [layerOrigin(i + 1, p.state.spacing)[0] - layerHalf, 0, 0],
       ]);
     const score = nodes.get(`score_${p.state.group}`) as THREE.Mesh;
     if (!score.geometry.getAttribute("uv")) {
@@ -749,6 +755,19 @@ function Model(p: Props) {
     material.map = texture;
     material.color.set("#ffffff");
     material.needsUpdate = true;
+    contextBase.current.clear();
+    scene.traverse((object) => {
+      const material =
+        object instanceof THREE.Mesh
+          ? (object.material as THREE.MeshStandardMaterial)
+          : null;
+      contextBase.current.set(object, {
+        visible: object.visible,
+        color: material?.color.clone(),
+        emissive: material?.emissive.clone(),
+      });
+    });
+    contextApplied.current = "";
     scene.updateMatrixWorld(true);
   }
   useLayoutEffect(() => {
@@ -782,14 +801,22 @@ function Model(p: Props) {
       position = [12, 9, 2];
     }
     if (["overview", "input", "output"].includes(view)) {
+      if (view === "overview") {
+        const fit =
+          (macroX("output", p.state.spacing) -
+            macroX("input", p.state.spacing) +
+            2) /
+          33;
+        return { position: [0, 12 * fit, 25 * fit], target: [0.5, 0, 0] };
+      }
       const anchor = nodes.get(anchors[view])!;
       const d = anchor.userData;
-      return view === "overview"
-        ? { position: [13, 11, 16 * distanceScale], target: [0, 0, 0] }
-        : {
-            position: anchor.getWorldPosition(new THREE.Vector3()).toArray(),
-            target: [d.target_x, d.target_y, d.target_z],
-          };
+      const shift =
+        macroX(view === "input" ? "input" : "output", p.state.spacing) -
+        layout.macro_nodes[view === "input" ? "input" : "output"].x;
+      const position = anchor.getWorldPosition(new THREE.Vector3()).toArray();
+      position[0] += shift;
+      return { position, target: [d.target_x + shift, d.target_y, d.target_z] };
     }
     return {
       position: inLayer(position, p.state.layer, p.state.spacing),
@@ -951,6 +978,71 @@ function Model(p: Props) {
       );
       camera.updateProjectionMatrix();
     }
+    // Context recedes as the eye approaches, while the destination keeps its
+    // material and world transform. Isolation is an explicit cutaway mode.
+    const detail = !["overview", "input", "output"].includes(p.state.view);
+    const distance = camera.position.distanceTo(
+      new THREE.Vector3(...layerOrigin(p.state.layer, p.state.spacing)),
+    );
+    const strength =
+      detail && p.contextMode !== "full"
+        ? 1 - THREE.MathUtils.smoothstep(distance, 0.65, 2)
+        : 0;
+    const contextKey = `${p.contextMode}:${p.state.view}:${p.state.group}:${p.state.expert}:${strength.toFixed(4)}`;
+    if (contextApplied.current !== contextKey) {
+      const subdued = new THREE.Color("#101820");
+      for (const [object, base] of contextBase.current) {
+        const outside = !belongsToFocus(
+          object,
+          p.state.view,
+          p.state.group,
+          p.state.expert,
+        );
+        const hide = outside && strength > 0.95 && p.contextMode === "isolated";
+        object.visible =
+          base.visible && (!(object instanceof THREE.Mesh) || !hide);
+        object.userData.contextLabelHidden = outside && strength > 0.75;
+        if (object instanceof THREE.Mesh && base.color) {
+          const material = object.material as THREE.MeshStandardMaterial;
+          material.color
+            .copy(base.color)
+            .lerp(subdued, outside ? strength * 0.94 : 0);
+          if (base.emissive)
+            material.emissive
+              .copy(base.emissive)
+              .multiplyScalar(outside ? 1 - strength : 1);
+        }
+      }
+      if (routes.current) {
+        const outside = !["layer", "router"].includes(p.state.view);
+        routes.current.visible = !(
+          outside &&
+          strength > 0.95 &&
+          p.contextMode === "isolated"
+        );
+        routes.current.children.forEach((route, i) => {
+          const material = (route as THREE.Mesh)
+            .material as THREE.MeshBasicMaterial;
+          if (material?.color)
+            material.color
+              .set(i ? "#69bfb3" : "#d3b77b")
+              .lerp(subdued, outside ? strength * 0.94 : 0);
+        });
+      }
+      if (contours.current) {
+        contours.current.visible = !(
+          strength > 0.95 && p.contextMode === "isolated"
+        );
+        contours.current.children.forEach((line, i) => {
+          const material = (line as THREE.Mesh)
+            .material as THREE.MeshBasicMaterial;
+          material.color
+            .set(i ? "#91a8b1" : "#ffffff")
+            .lerp(subdued, strength * 0.94);
+        });
+      }
+      contextApplied.current = contextKey;
+    }
     if (controls.current)
       p.cameraRef.current = {
         position: camera.position.toArray(),
@@ -991,6 +1083,7 @@ function Model(p: Props) {
     const rect = gl.domElement.getBoundingClientRect();
     (window as any).__explorerScene = {
       selected: { ...p.state },
+      contextMode: p.contextMode,
       presentedView: visibleView,
       navigationPhase: navigation.current?.phase ?? "settled",
       navigationElapsed: navigation.current?.elapsed ?? 0,
@@ -1081,6 +1174,23 @@ function Model(p: Props) {
   });
   return (
     <>
+      <group ref={contours} name="layer-contours">
+        <Line
+          points={outlines.points}
+          vertexColors={outlines.colors}
+          color="white"
+          segments
+          lineWidth={0.9}
+          raycast={() => {}}
+        />
+        <Line
+          points={outlines.links}
+          color="#91a8b1"
+          segments
+          lineWidth={0.9}
+          raycast={() => {}}
+        />
+      </group>
       {(p.flowPlaying || p.flowTime > 0) && (
         <group
           position={
@@ -1180,6 +1290,7 @@ function Model(p: Props) {
         </AnnotationLevel>
       ))}
       <group
+        ref={routes}
         position={layerOrigin(p.state.layer, p.state.spacing)}
         scale={FOCUS_SCALE}
       >
@@ -1204,7 +1315,7 @@ function Model(p: Props) {
         enabled={!p.playing && !navigation.current}
         makeDefault
         minDistance={0.001}
-        maxDistance={65}
+        maxDistance={150}
         onStart={() => (moving.current = false)}
         onEnd={() => {
           if (p.playing || !controls.current) return;

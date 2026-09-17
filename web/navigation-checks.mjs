@@ -125,6 +125,9 @@ try {
       // Start with a different slider value so the synthetic input dispatches a
       // real React change, even when the preceding case also sought to 22 s.
       await button("Reset").click();
+      await page
+        .getByLabel("Surroundings", { exact: true })
+        .selectOption("full");
       await settle();
       await button("Attention group").click();
       await settle();
@@ -156,8 +159,12 @@ try {
         expect(node.visible, `${id} remains visible during flight`).toBe(true);
         expect(node.opacity, `${id} remains opaque during flight`).toBe(1);
       }
-      if (interruption === "reset-aim") await button("Reset").click();
-      else if (interruption === "restore-inbound") {
+      if (interruption === "reset-aim") {
+        await button("Reset").click();
+        await page
+          .getByLabel("Surroundings", { exact: true })
+          .selectOption("full");
+      } else if (interruption === "restore-inbound") {
         await page.getByRole("textbox", { name: "View context" }).fill(saved);
         await button("Restore view").click();
       } else await seek(22);

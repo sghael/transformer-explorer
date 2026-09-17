@@ -47,6 +47,10 @@ const names = {
 try {
   await page.goto(process.env.PREVIEW_URL, { waitUntil: "networkidle" });
   await page.waitForFunction(() => window.__explorer?.ready);
+  await page
+    .getByRole("combobox", { name: "Surroundings" })
+    .selectOption("full");
+  await page.waitForTimeout(150);
   report.build = await page.evaluate(() => window.__explorer.build);
   await page.evaluate(() => {
     const root = window.__explorerInspect?.();

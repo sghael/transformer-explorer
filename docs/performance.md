@@ -21,3 +21,19 @@ Paused software-rendered views meet the approximate 60 fps target in this sample
 Representative laptop hardware frame time, thermal behavior, battery usage and exact GPU texture allocation remain unmeasured. The human confirmed that the model loads on the laptop. Smoothness, performance and learning effectiveness must not be inferred from that connectivity check.
 
 Reproduce with PREVIEW_URL set to the running development preview, then run node web/browser-checks.mjs and node web/deep-checks.mjs. The frame-sampled flights are recorded separately by node web/flight-checks.mjs. For hardware evidence, run the same interactions and capture performance on the target browser.
+
+
+## Directional layout follow-up
+
+The directional-layout full-browser run on **20260917T235010Z-4ef01d** measured the following paused views in Full context, with the same software renderer, viewport, pixel ratio and 59-interval sampling described above. The later 235150 build changes only desktop embedding-label placement.
+
+| View | Draw calls | Triangles | Median frame | p95 frame |
+| --- | ---: | ---: | ---: | ---: |
+| compact | 849 | 24,084 | 16.7 ms | 16.8 ms |
+| spaced | 849 | 24,084 | 16.7 ms | 16.7 ms |
+| layer | 747 | 18,756 | 16.7 ms | 16.7 ms |
+| attention | 352 | 8,920 | 16.7 ms | 16.8 ms |
+
+Active overview flow was measured on the earlier directional build **20260917T234138Z-2e3894**, before the screen-width overview contours were added: **872 draw calls**, **23,242 triangles**, **16.8 ms median**, **66.6 ms p95**, and **30.507 ms mean**. This remains a recorded failure to sustain 60 fps under software rendering. It is not a measurement of the later contour rendering or of the target laptop. No controlled before/after performance improvement is claimed.
+
+The current GLB has **21,220 triangles**, **91 shared meshes**, **1,175 nodes**, and **502,836 bytes**. Full, muted and isolated context preserve world transforms; isolation suppresses rendering of outside meshes. Its hardware performance effect has not been benchmarked.

@@ -153,6 +153,12 @@ h3 {
   flex-wrap: wrap;
   margin: 14px 0 20px;
 }
+.surroundings-note {
+  margin: 0.35rem 0 0.7rem;
+  color: #adc0cb;
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
 .spatial-controls label {
   display: flex;
   align-items: center;

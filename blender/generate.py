@@ -7,6 +7,7 @@ The standard glTF exporter reverses our (x, -z, y) Blender conversion.
 import json
 from collections import Counter
 from pathlib import Path
+from math import cos, sin, tau
 
 import bpy
 import bmesh
@@ -14,6 +15,8 @@ from mathutils import Vector
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = json.loads((ROOT / "shared/model-spec.json").read_text())
+LAYOUT = json.loads((ROOT / "shared/layout.json").read_text())
+assert LAYOUT["schema_version"] == 1
 A = SPEC["architecture"]
 assert SPEC["schema_version"] == 1
 assert A["attention_heads"] == A["kv_heads"] * 4
@@ -66,7 +69,21 @@ def mesh_shape(size, profile, frame_bar=None):
                      (2,3,7,6), (3,0,4,7)]:
             faces.append(tuple(i + offset for i in face))
 
-    if profile == "skeletal_frame":
+    if profile == "normalization_disk":
+        # A solid disk normalizes an activation vector; open frames contain subgraphs.
+        x, y, z = size
+        assert y == z
+        segments = 32
+        for side in [-1, 1]:
+            for i in range(segments):
+                angle = tau * i / segments
+                vertices.append(convert((side*x/2, y/2*cos(angle), z/2*sin(angle))))
+        vertices.extend([convert((-x/2,0,0)), convert((x/2,0,0))])
+        for i in range(segments):
+            nxt = (i+1) % segments
+            faces.extend([(i,nxt,nxt+segments,i+segments),
+                          (2*segments,nxt,i), (2*segments+1,i+segments,nxt+segments)])
+    elif profile == "skeletal_frame":
         # Twelve narrow edge bars leave every face open for physical navigation.
         assert frame_bar is not None
         bar = frame_bar
@@ -86,13 +103,16 @@ def mesh_shape(size, profile, frame_bar=None):
         radius = min(.12, min(size) * .16)
     mesh = bpy.data.meshes.new(f"{profile}_{len(MESHES)}")
     mesh.from_pydata(vertices, [], faces)
-    if profile not in {"slab", "skeletal_frame"}:
+    if profile not in {"slab", "skeletal_frame", "normalization_disk"}:
         topology = bmesh.new()
         topology.from_mesh(mesh)
         bmesh.ops.bevel(topology, geom=list(topology.edges), offset=radius,
                         segments=3, affect="EDGES", clamp_overlap=True)
         topology.to_mesh(mesh)
         topology.free()
+    if profile == "normalization_disk":
+        for polygon in mesh.polygons:
+            polygon.use_smooth = len(polygon.vertices) == 4
     mesh.update()
     return mesh
 
@@ -100,7 +120,8 @@ def mesh_shape(size, profile, frame_bar=None):
 def box(identifier, component, parent, pos, size, color="slate", **extras):
     operations = {"expert", "moe_router", "weighted_merge", "input", "output",
                   "silu", "elementwise_multiply", "rms_norm", "attention_weighted_sum", "rotary_position_operation"}
-    profile = ("skeletal_frame" if component in {"decoder_layer", "expert"} else
+    profile = ("normalization_disk" if component == "rms_norm" else
+               "skeletal_frame" if component in {"decoder_layer", "expert"} else
                "rounded_operation" if component in operations else "slab")
     # Equivalent path lengths can differ by floating-point subtraction noise.
     size = tuple(round(value, 6) for value in size)
@@ -162,44 +183,53 @@ def generate():
     root = node("model", "model", name="MODEL_ROOT", interactive=False, lod=0,
                 asset_version="1.0.0", illustrative=True)
     stack = node("stack", "layer_stack", root, name="LAYER_STACK", lod=0)
+    pitch = LAYOUT["layer_pitch"]
+    dimensions = LAYOUT["layer_dimensions"]
+    half_x = dimensions[0] / 2
+    first_x = -(A["num_layers"]-1)/2 * pitch
+    last_x = -first_x
     for i in range(A["num_layers"]):
-        layer = box(f"layer_{i}", "decoder_layer", stack, (0,0,(i-15.5)*.32),
-                    (4,.12,.22), "slate", layer=i, lod=0)
-        path(f"layer_summary_{i}", layer, [(0,0,-.11),(0,0,.11)],
+        x = first_x + i*pitch
+        layer = box(f"layer_{i}", "decoder_layer", stack, (x,0,0),
+                    dimensions, "slate", layer=i, lod=0)
+        path(f"layer_summary_{i}", layer, [(-half_x,0,0),(half_x,0,0)],
              component="collapsed_layer_flow", layer=i, lod=0, thickness=.0015)
         if i < A["num_layers"] - 1:
-            z = (i-15.5)*.32
-            path(f"stack_gap_{i}", stack, [(0,0,z+.11),(0,0,z+.32-.11)],
+            path(f"stack_gap_{i}", stack, [(x+half_x,0,0),(x+pitch-half_x,0,0)],
                  component="layer_link", layer=i, lod=0, thickness=.0015)
-    for identifier, x, size, color, component in [
-        ("input", -8, (1.1,.7,1.8), "white", "input"),
-        ("embedding", -5.5, (1.0,2.3,2.5), "teal", "embedding"),
-        ("final_norm", 4.8, (.25,2.3,2.5), "amber", "rms_norm"),
-        ("lm_head", 7, (1.0,2.8,3.2), "blue", "lm_head"),
-        ("output", 9.5, (1.0,.7,1.8), "white", "output"),
+    for identifier, color, component in [
+        ("input", "white", "input"), ("embedding", "teal", "embedding"),
+        ("final_norm", "amber", "rms_norm"), ("lm_head", "blue", "lm_head"),
+        ("output", "white", "output"),
     ]:
-        box(identifier, component, root, (x,0,0), size, color, lod=0)
-    for identifier, points in [
-        ("overview_input", [(-7.45,0,0),(-6,0,0)]),
-        ("overview_embed", [(-5,0,0),(-3,0,0),(-3,0,-5.07),(0,0,-5.07)]),
-        ("overview_final", [(0,0,5.07),(3,0,5.07),(3,0,0),(4.675,0,0)]),
-        ("overview_norm", [(4.925,0,0),(6.5,0,0)]),
-        ("overview_output", [(7.5,0,0),(9,0,0)]),
+        layout = LAYOUT["macro_nodes"][identifier]
+        box(identifier, component, root, (layout["x"],0,0), layout["size"], color, lod=0)
+    def macro_face(identifier, side):
+        layout = LAYOUT["macro_nodes"][identifier]
+        return layout["x"] + side * layout["size"][0]/2
+    for identifier, start, end in [
+        ("overview_input", macro_face("input",1), macro_face("embedding",-1)),
+        ("overview_embed", macro_face("embedding",1), first_x-half_x),
+        ("overview_final", last_x+half_x, macro_face("final_norm",-1)),
+        ("overview_norm", macro_face("final_norm",1), macro_face("lm_head",-1)),
+        ("overview_output", macro_face("lm_head",1), macro_face("output",-1)),
     ]:
-        path(identifier, root, points, lod=0)
+        assert start < end
+        path(identifier, root, [(start,0,0),(end,0,0)], lod=0)
     path("generation_feedback", root,
-         [(10,0,0),(11,0,0),(11,0,6.8),(-9,0,6.8),(-9,0,0),(-8.55,0,0)],
+         [(macro_face("output",1),0,0),(17,0,0),(17,0,LAYOUT["feedback_z"]),
+          (-16,0,LAYOUT["feedback_z"]),(-16,0,0),(macro_face("input",-1),0,0)],
          thickness=.025, lod=0)
 
     focus = node("focus", "focus_layer", root, name="FOCUS_LAYER", interactive=False)
-    path("focus_input", focus, [(0,0,-5),(-9,0,-5),(-9,0,0)], thickness=.025)
-    path("focus_output", focus, [(11,0,0),(11,0,5),(0,0,5)], thickness=.025)
+    path("focus_input", focus, [(-11,0,0),(-9,0,0)], thickness=.025)
+    path("focus_output", focus, [(10.24,0,0),(11,0,0)], thickness=.025)
     stream = node("residual_stream", "connection", focus, interactive=False)
     for i, (start, end) in enumerate([(-9,-8.11),(-7.89,-7),(-2.675,-2.24),
-                                     (-1.76,-.11),(.11,1.75),(8.25,9.76),(10.24,11)]):
+                                     (-1.76,-.11),(.11,1.75),(8.25,9.76)]):
         path(f"residual_stage_{i}", stream, [(start,0,0),(end,0,0)], thickness=.025)
     for identifier, x in [("norm1", -8), ("norm2", 0)]:
-        box(identifier, "rms_norm", focus, (x,0,0), (.22,1.8,1.6), "amber")
+        box(identifier, "rms_norm", focus, (x,0,0), (.22,.5,.5), "amber")
     addition("add1", focus, -2)
     addition("add2", focus, 10)
     path("residual_attention", focus, [(-9,0,0),(-9,0,-5.4),(-2,0,-5.4),(-2,0,0)],
@@ -318,14 +348,14 @@ def generate():
                  thickness=.055*.3, expert=e)
 
     anchors = {
-        "OVERVIEW": ((16,13,19),(0,0,0)),
+        "OVERVIEW": ((0,12,25),(0,0,0)),
         "LAYER": ((17,13,20),(1,0,0)),
         "ATTENTION": ((.8,6,10),(-5,0,0)),
         "CACHE": ((-1,2,8),(-4.7,-2.2,0)),
         "MOE": ((13,8,13),(5,0,0)),
         "EXPERT": ((10,3,8),(5,-2,0)),
-        "INPUT": ((-1,6,10),(-6,0,0)),
-        "LM_HEAD": ((15,7,10),(7,0,0)),
+        "INPUT": ((-13.5,3,6),(-13.5,0,0)),
+        "LM_HEAD": ((14,3,6),(14,0,0)),
         "MATRIX": ((-3.35,1.45,9),(-3.35,1.45,0)),
         "TEST": ((4,5,6),(1,2,3)),
     }

@@ -1,7 +1,7 @@
 {
   "overview": {
     "title": "A decoder-only Transformer",
-    "body": "An input sequence becomes vectors, passes through 32 decoder layers, and ends as vocabulary scores. Stack depth separates sequential layers; it does not represent a physical memory layout. All numerical demonstrations use deterministic illustrative values."
+    "body": "An input sequence becomes vectors, passes through 32 decoder layers, and ends as vocabulary scores. Left-to-right position follows sequential computation, including all 32 layers. Depth separates parallel alternatives; this is not a physical memory layout. All numerical demonstrations use deterministic illustrative values."
   },
   "input.embedding": {
     "title": "Embedding lookup",

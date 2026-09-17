@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import Scene, { type CameraPose, type Selection } from "./Scene";
+import Scene, {
+  type CameraPose,
+  type Selection,
+  type ContextMode,
+} from "./Scene";
 import { flowDescription } from "./Flow";
 import { inspectRmsNorm } from "./inspection";
 import EvidenceStrip, {
@@ -46,7 +50,7 @@ const labels: Record<View, string> = {
 };
 const explanations: Record<View, string> = {
   overview:
-    "Trace a token through 32 decoder layers. Each layer has distinct learned weights. Depth separates sequential layers; it does not show physical memory or an embedding space.",
+    "Trace a token through 32 decoder layers. Each layer has distinct learned weights. Layers advance left to right along +X, following the computation. Depth separates parallel heads and experts; these coordinates are schematic.",
   input:
     "A token ID selects a learned embedding row: 4,096 numbers form its initial representation. The words below are illustrative chunks, not verified tokenizer boundaries.",
   layer:
@@ -86,7 +90,7 @@ function explainShape(selection: Selection, decode: boolean): ShapeExplanation {
       role: "Each thin slice represents a complete decoder layer with its own weights.",
       dimensions: `${architecture.num_layers} sequential layers; ${hidden} activation channels per token.`,
       arrangement:
-        "Depth orders the layers. It does not depict physical memory or parameter coordinates.",
+        "Layers advance left to right along +X. Depth separates parallel heads and experts, not sequential layers. Positions do not depict physical memory.",
     },
     input: {
       title: "Token embedding table",
@@ -99,10 +103,10 @@ function explainShape(selection: Selection, decode: boolean): ShapeExplanation {
     layer: {
       title: `Layer ${layer}: residual stream`,
       kind: "Activations and operations",
-      role: "Connections carry tensors between operations. Solid RMSNorm nodes rescale each token vector; attention and the expert network transform it; each + junction adds the bypassed vector.",
+      role: "Connections carry tensors between operations. Circular RMSNorm badges rescale each token vector; attention and the expert network transform it; each + junction adds the bypassed vector.",
       dimensions: `${hidden} channels enter and leave each sublayer. Both residual additions preserve this width.`,
       arrangement:
-        "The layer interior is nested inside its selected stack frame. Attention groups and expert alternatives separate in depth within that interior; their dimensions are schematic.",
+        "The layer interior is nested inside its selected frame and computes along +X, matching the layer sequence. Attention groups and expert alternatives separate in depth within that interior; their dimensions are schematic.",
     },
     attention: {
       title: `Group ${selection.group + 1}: Q / K / V projections`,
@@ -160,6 +164,7 @@ export default function App() {
   const [state, setState] = useState<Selection>(initial);
   const [cameraRevision, setCameraRevision] = useState(0);
   const [lowQuality, setLowQuality] = useState(false);
+  const [contextMode, setContextMode] = useState<ContextMode>("muted");
   const [time, setTime] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [flowTime, setFlowTime] = useState(0);
@@ -271,13 +276,14 @@ export default function App() {
       playing,
       flowTime,
       flowPlaying,
+      contextMode,
       ready,
       get camera() {
         return cameraRef.current;
       },
       build,
     };
-  }, [state, time, playing, flowTime, flowPlaying, ready]);
+  }, [state, time, playing, flowTime, flowPlaying, contextMode, ready]);
   const review = () => {
     const value = JSON.stringify(
       {
@@ -293,6 +299,7 @@ export default function App() {
         inspectionDepth,
         inspectionChannel,
         lowQuality,
+        contextMode,
         speed,
         matrixOrigin,
         camera: cameraRef.current,
@@ -364,6 +371,11 @@ export default function App() {
         value.inspectionChannel >= 8
       )
         throw Error("Invalid inspection state");
+      const restoredContextMode =
+        value.contextMode === undefined ? "muted" : value.contextMode;
+      if (!["full", "muted", "isolated"].includes(restoredContextMode))
+        throw Error("Invalid surroundings mode");
+      setContextMode(restoredContextMode);
       setPlaying(false);
       setFlowPlaying(false);
       setFlowTime(value.flowTime);
@@ -403,6 +415,7 @@ export default function App() {
             setInspectionDepth("operation");
             setInspectionChannel(0);
             setLowQuality(false);
+            setContextMode("muted");
             setSpeed(1);
             setRestorePose(null);
             setMatrixOrigin("attention");
@@ -432,6 +445,7 @@ export default function App() {
               }}
               state={state}
               lowQuality={lowQuality}
+              contextMode={contextMode}
               cameraRevision={cameraRevision}
               time={time}
               flowTime={flowTime}
@@ -483,12 +497,12 @@ export default function App() {
               }
             >
               {state.view === "overview"
-                ? "Depth → 32 sequential layers"
+                ? "Left → right (+X): 32 sequential layers · Depth: parallel heads / experts"
                 : state.view === "matrix"
                   ? "Rows: query tokens · Columns: key tokens"
                   : state.view === "cache"
                     ? "Rows: token positions · Columns: sampled head channels"
-                    : "Left → right: computation · Depth: parallel alternatives"}
+                    : "Left → right (+X): computation · Depth: parallel heads / experts"}
               <br />
               Drag to orbit · Scroll to zoom · Select an object to inspect
             </div>
@@ -535,6 +549,23 @@ export default function App() {
               />
               <output>{state.spacing.toFixed(1)}×</output>
             </label>
+            {reviewEnabled && (
+              <label>
+                Surroundings{" "}
+                <select
+                  aria-label="Surroundings"
+                  aria-describedby="surroundings-note"
+                  value={contextMode}
+                  onChange={(event) =>
+                    setContextMode(event.target.value as ContextMode)
+                  }
+                >
+                  <option value="full">Full context</option>
+                  <option value="muted">Muted context</option>
+                  <option value="isolated">Hide surroundings</option>
+                </select>
+              </label>
+            )}
             {state.view === "matrix" && (
               <button onClick={() => change({ view: matrixOrigin })}>
                 Return to spatial view
@@ -547,6 +578,12 @@ export default function App() {
               Overview
             </button>
           </div>
+          {reviewEnabled && (
+            <p id="surroundings-note" className="surroundings-note">
+              Hide surroundings isolates the focus; connections continue outside
+              it.
+            </p>
+          )}
           <div className="flow-controls" aria-label="Flow demonstration">
             <div>
               <button
@@ -715,14 +752,14 @@ export default function App() {
               </div>
             </dl>
             <p className="shape-scale">
-              Open frames enclose subgraphs. Solid nodes apply operations.
-              Matrix panels hold learned weights or runtime arrays, identified
-              by their labels. Moving points, bundles and grids represent token
-              IDs, vectors and tensors.
+              Open frames enclose subgraphs. Circular RMSNorm badges and other
+              solid nodes apply operations. Matrix panels hold learned weights
+              or runtime arrays, identified by their labels. Moving points,
+              bundles and grids represent token IDs, vectors and tensors.
             </p>
             <p className="shape-scale">
               Geometry is schematic. Shape size, thickness and displayed cells
-              do not encode parameter counts.
+              do not encode parameter counts or computational cost.
             </p>
           </section>
           <p className="data-label">
@@ -775,9 +812,9 @@ export default function App() {
                     activation vector
                   </h3>
                   <p>
-                    The solid node represents an operation. RMSNorm divides all
-                    channels by one root mean square denominator, then applies a
-                    learned scale γ to each channel.
+                    The circular badge represents an operation, with a schematic
+                    size. RMSNorm divides all channels by one root mean square
+                    denominator, then applies a learned scale γ to each channel.
                   </p>
                   <p className="formula">yᵢ = γᵢ × xᵢ / √(mean(x²) + ε)</p>
                   <p>
