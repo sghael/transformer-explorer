@@ -55,13 +55,60 @@ time. Use actual browser interaction to check orbit, spacing, selection, and ret
 a pair of screenshots alone cannot prove those controls work. Mark learner checks
 as unperformed until a person has tried them.
 
+## Human steering during autonomous work
+
+Work autonomously within the authorized milestone while keeping the human able
+to redirect it. Feedback is welcome at any point; a visual checkpoint is an
+invitation to inspect, not an approval gate. Silence permits continued work within
+the existing scope but is not evidence of human approval or learner comprehension.
+
+1. **Keep a reviewable preview available.** Once milestone 2 has a running viewer,
+   publish a reachable URL using the host's preview helper and actual server port.
+   Keep the latest successful build available during edits or failed rebuilds.
+   Identify it by a build ID and timestamp so an older render is not mistaken for
+   current work. A commit hash alone does not identify uncommitted visual changes.
+2. **Show meaningful changes.** After the first spatial slice and each coherent
+   visible increment, post the preview link, a screenshot from that build, what
+   changed, and what remains incomplete. Continue useful work without waiting for
+   a response. Do not send a checkpoint for every edit or unchanged render.
+3. **Capture the view being discussed.** A development-only review control copies
+   a compact view description: build/asset version, illustrative seed, selected
+   layer/group/token, camera pose, stack/explosion state, tour time, and viewport.
+   Offer selectable text if clipboard access is unavailable. The human can paste
+   this here with feedback or attach a screenshot; neither is required to comment.
+   No custom chat backend or website-to-agent command channel is needed.
+4. **Apply steering promptly.** When feedback arrives, acknowledge the intended
+   correction and use the referenced view to locate it. Replan before the next
+   dependent edit, and stop or revise affected worker tasks. A tool already running
+   may need to reach a safe stopping point; do not promise instantaneous cancellation.
+   Preserve useful work. If a material ambiguity remains, ask a focused question
+   while continuing only work independent of that answer.
+5. **Close the feedback loop.** Make the correction, rerun affected checks, and
+   show the corresponding updated view. Record the feedback outcome in progress
+   notes and carry accepted visual preferences into subsequent work. Keep raw
+   feedback and private screenshots local; sanitize any tracked summary.
+
+Ordinary feedback steers the ongoing task. An explicit **pause work** stops new
+implementation actions at the next safe boundary until the human resumes. This
+is separate from the viewer's **pause tour**, which controls only its timeline.
+Scope expansion or actions requiring additional authorization still need that
+authorization. Do not infer it from a visual preference or from silence.
+
+The human sets aesthetic intent and evaluates whether the explanation feels clear.
+The agent supplies alternatives, implements them, and checks readability,
+accessibility, architecture, and behavior. If a preferred visual treatment would
+misrepresent the model, explain the conflict and propose a faithful alternative.
+Human taste feedback and learner testing complement automated checks; neither
+replaces the other. Start with the existing chat and preview rather than adding
+another coordination system.
+
 ## Working loop
 
-1. **Plan.** Choose one milestone increment. State the learning outcome, the relationship conveyed by depth, files/interfaces involved, observable acceptance checks, and known uncertainty. Use high when these decisions are coupled; medium when extending an established pattern. Finish when a worker could implement the task without inventing its interface.
+1. **Plan.** Apply any new human steering, then choose one milestone increment. State the learning outcome, the relationship conveyed by depth, files/interfaces involved, observable acceptance checks, and known uncertainty. Use high when these decisions are coupled; medium when extending an established pattern. Finish when a worker could implement the task without inventing its interface.
 2. **Implement.** Work locally or dispatch a bounded worker using the table. Delegate only alongside useful independent coordinator work; start with at most two workers. Assign exclusive files or isolated worktrees and keep shared contract changes with the coordinator. Finish with a concrete diff and check results.
-3. **Verify.** Run the affected structural checks, export/load checks, and relevant browser interaction. Capture fixed camera views with the seed, selected layer/group/token, stack/explosion pose, viewport, and tour time. Include the paired oblique views and face-on reading view when spatial behavior changes. Inspect the images rather than inferring quality from a successful command. Finish with evidence for every acceptance criterion.
+3. **Verify.** Run the affected structural checks, export/load checks, and relevant browser interaction. Capture fixed camera views with the seed, selected layer/group/token, stack/explosion pose, viewport, and tour time. Include the paired oblique views and face-on reading view when spatial behavior changes. Inspect the images rather than inferring quality from a successful command. Finish with evidence for every acceptance criterion and publish a visual checkpoint when the visible result changed.
 4. **Correct or accept.** Identify the observed defect and make one focused correction. If the same criterion still fails, narrow the case and reassess effort or task boundaries. Accept only when checks pass; then return to routine effort for the next bounded increment.
-5. **Record.** Update `docs/progress.md` with completed criteria, unresolved limitations, next task, and requested/confirmed model and effort where available. Raw logs and private paths stay in `docs-private/`.
+5. **Record.** Update `docs/progress.md` with completed criteria, the latest preview/build ID, feedback addressed or pending, unresolved limitations, next task, and requested/confirmed model and effort where available. Raw logs and private paths stay in `docs-private/`.
 
 A worker brief contains: objective, owned files, required input contracts, non-goals, acceptance checks, and required return evidence. A worker reports changed files, results, artifacts, and unresolved decisions. The coordinator checks the actual output before integration.
 

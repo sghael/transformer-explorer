@@ -68,6 +68,14 @@ correct the observed defect, and rerun affected checks. Escalate reasoning only
 when unresolved uncertainty warrants it. Summarize decisions and evidence;
 reasoning effort never replaces running code or looking at the result.
 
+Keep the latest successful browser preview reachable while working. Post a
+screenshot and build-identified link after meaningful visual changes, without
+waiting for approval at each checkpoint. Apply human feedback from chat at the
+next safe boundary and revise affected work; show the corrected view afterward.
+An explicit pause-work request stops implementation until resumed. Follow the
+human steering protocol in docs/agent-workflow.md, including reproducible view
+context. Human aesthetic preferences guide design; preserve architectural truth.
+
 Keep rendering primitives lightweight. The browser owns labels, tour timing,
 token motion, and camera control. Compute tour state from absolute time and a
 fixed seed so seeking works in both directions. Preserve Explore control while

@@ -130,6 +130,18 @@ The full storyboard follows overview → tokens → embeddings → stack → exp
 
 The first polished tour should last roughly 60–90 seconds, grouping related chapters where needed.
 
+## Development preview and feedback
+
+During implementation, keep a reachable preview of the latest successful build
+and share visual checkpoints in the agent conversation. A development-only review
+control identifies the build and copies its camera/selection/timeline context, so
+feedback can refer to the exact view. It does not send messages or run agent
+commands. Human feedback steers autonomous work through the existing chat;
+explicitly pausing the agent is separate from pausing the tour. Follow the
+[steering protocol](docs/agent-workflow.md#human-steering-during-autonomous-work).
+These controls are planned for milestone 2 and are not part of the public exhibit
+interface by default.
+
 ## Shared data and repository layout
 
 ```text
