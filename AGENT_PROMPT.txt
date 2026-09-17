@@ -9,13 +9,19 @@ The archived original prompt is background, not an additional assignment.
 CURRENT SCOPE
 
 The repository contains a specification and scaffold. There is no implemented
-Blender generator or web viewer. Start with milestone 1 (design contracts),
-then build milestone 2 (one complete Blender-to-browser path). Continue to
-later milestones only when included in the user's requested goal.
+Blender generator or web viewer at the time this brief was written. Inspect the
+checkout and docs/progress.md if present before assuming that remains true.
+The full assignment covers milestones 1–5. Start with design contracts and one
+complete Blender-to-browser path, publish the working preview by milestone 2,
+then continue to the complete computational tutorial and delivery checks.
+Honor a narrower scope if the launch request specifies one.
 
 Inspect installed tools and verify their versions. Keep machine-specific
 findings in docs-private/. Record portable version requirements in public docs.
-Continue in this repository; it is already initialized.
+Continue in this repository; it is already initialized. Follow the fresh-context
+startup and skill boundaries in docs/agent-workflow.md. In particular, do not use
+Impeccable for pedagogy, scene architecture, Blender geometry, or initial planning;
+reserve it for scoped web-interface refinement after the spatial approach exists.
 
 LEARNING CONTRACT
 
@@ -61,14 +67,21 @@ with the coordinator. Return diffs, test results, and artifact paths.
 Build from Python and JSON using Blender's background execution as the baseline.
 An available Blender MCP connection may help inspect a live scene; it is optional
 and must not become necessary to reproduce the build. Generate a structured
-scene report and diagnostic views. Inspect the exported asset in the browser.
+scene report and diagnostic views. Export a GLB, load it in the live Three.js
+viewer, and build the entire tutorial around navigating that model. The website
+owns camera motion, labels, highlighting, and token animation. Inspect the actual
+exported asset in the browser; a Blender render or video is not the deliverable.
 
 At each increment: build, validate structure, inspect the relevant browser view,
 correct the observed defect, and rerun affected checks. Escalate reasoning only
 when unresolved uncertainty warrants it. Summarize decisions and evidence;
 reasoning effort never replaces running code or looking at the result.
 
-Keep the latest successful browser preview reachable while working. Post a
+Keep the latest successful browser preview reachable from the human's laptop
+on the home LAN while working. Bind to 0.0.0.0, take the port from server startup,
+and use agent-preview-url to publish a verified LAN address. Verify assets and
+laptop access; record unverified client access honestly. Private operating details
+come from the launch request or ignored local context, not public documents. Post a
 screenshot and build-identified link after meaningful visual changes, without
 waiting for approval at each checkpoint. Apply human feedback from chat at the
 next safe boundary and revise affected work; show the corrected view afterward.
@@ -81,7 +94,7 @@ token motion, and camera control. Compute tour state from absolute time and a
 fixed seed so seeking works in both directions. Preserve Explore control while
 paused and blend back to the tour on resume.
 
-DONE FOR THE FIRST IMPLEMENTATION GOAL
+EARLY PREVIEW CHECKPOINT
 
 Milestones 1 and 2 in docs/project-plan.md pass: design contracts exist; a clean
 build creates a GLB and production viewer; all layer selections work; one layer
@@ -90,6 +103,16 @@ and representative browser views have been checked. The first slice includes
 stack spacing, one shared K/V group with four Q heads, linked matrix reading,
 and the spatial round trip. Capture two oblique views and verify the controls
 in the browser, including keyboard selection and the persistent locator. Record limitations honestly.
+
+DONE FOR THE FULL ASSIGNMENT
+
+Continue through milestones 3–5: computational explanations, the complete guided
+tour, keyboard and reduced-motion behavior, and measured delivery/performance
+checks. All scenes must remain independently explorable with human steering.
+Distinguish implemented/verified criteria from human-dependent checks still open;
+missing learner feedback does not prevent independent implementation or justify
+claiming that comprehension was tested. Do not stop at the early preview when
+assigned the full goal.
 
 Deliver the changed source, reproducible commands, reachable preview address,
 and concise evidence in docs/progress.md. Publish preview addresses using the

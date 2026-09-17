@@ -8,7 +8,7 @@ An interactive 3D exhibit explaining how a decoder-only Transformer processes to
 
 Read [AGENT_PROMPT.txt](AGENT_PROMPT.txt) for the current implementation assignment and [the project plan](docs/project-plan.md) for milestone acceptance criteria. [AGENTS.md](AGENTS.md) routes agents to the product requirements and [reasoning/delegation workflow](docs/agent-workflow.md). The [initial storyboard](docs/storyboard.md) maps the tour to learning objectives and visual checks.
 
-The first implementation goal covers design contracts and one complete Blender-to-browser path. This repository is already initialized. The [original prompt](docs/archive/original-agent-prompt.txt) is preserved verbatim as historical background.
+The full implementation goal covers all five milestones, with an early preview after design contracts and one complete Blender-to-browser path. This repository is already initialized. The [original prompt](docs/archive/original-agent-prompt.txt) is preserved verbatim as historical background.
 
 ## What the exhibit should teach
 
@@ -132,14 +132,17 @@ The first polished tour should last roughly 60–90 seconds, grouping related ch
 
 ## Development preview and feedback
 
-During implementation, keep a reachable preview of the latest successful build
+During implementation, keep a preview of the latest successful build reachable from a laptop browser on the same home LAN as the build host
 and share visual checkpoints in the agent conversation. A development-only review
 control identifies the build and copies its camera/selection/timeline context, so
 feedback can refer to the exact view. It does not send messages or run agent
 commands. Human feedback steers autonomous work through the existing chat;
 explicitly pausing the agent is separate from pausing the tour. Follow the
 [steering protocol](docs/agent-workflow.md#human-steering-during-autonomous-work).
-These controls are planned for milestone 2 and are not part of the public exhibit
+Bind the preview server to `0.0.0.0`, publish a verified LAN address with its
+actual startup port, and verify asset loading from the laptop when possible.
+Keep actual addresses and machine details in ignored private context. These
+controls are planned for milestone 2 and are not part of the public exhibit
 interface by default.
 
 ## Shared data and repository layout
@@ -182,7 +185,7 @@ Document the measurement procedure and results in `docs/`. Check performance on 
 
 ## Phased milestones
 
-The [project plan](docs/project-plan.md) defines five milestones: design contracts, an end-to-end slice, computational explanation, teaching and interaction, and delivery. Each has explicit acceptance checks. The initial implementation goal covers the first two.
+The [project plan](docs/project-plan.md) defines five milestones: design contracts, an end-to-end slice, computational explanation, teaching and interaction, and delivery. Each has explicit acceptance checks. The full assignment covers all five; the first two are the early preview checkpoint.
 
 Use the [agent workflow](docs/agent-workflow.md) to select reasoning effort and delegate bounded work. Pin dependency versions and record the tested Blender version when implementation begins.
 

@@ -4,6 +4,10 @@
 
 Read `AGENT_PROMPT.txt` for the current assignment, `docs/project-plan.md` for milestone acceptance criteria, and `README.md` for the exhibit's technical and educational requirements. Read `docs/agent-workflow.md` before choosing reasoning effort, delegating, escalating a failed task, or setting an implementation goal. The prompt in `docs/archive/` is historical material, not current instructions.
 
+## Fresh launch and skill boundaries
+
+For a fresh task, use the startup, skill boundaries, and human steering protocol in `docs/agent-workflow.md`; inspect `docs/progress.md` if present. The full goal covers all five milestones, with a LAN-accessible preview by milestone 2. Do not use `impeccable` for Transformer pedagogy, scene architecture, Blender geometry, or initial planning; reserve it for later scoped web-interface refinement. Skills must not restart discovery, add redundant approval gates, or replace the required Blender Python → GLB → live browser pipeline. Human feedback can redirect work throughout the run.
+
 ## Model requirement
 
 Read `.codex/config.toml` for the current model selection. Use the project-configured model for the coordinator and every worker; low/Light reasoning effort is the minimum. Choose effort according to `docs/agent-workflow.md`. Project configuration takes precedence over generic cheaper-worker defaults. Set the configured model and chosen effort explicitly at dispatch. If workers cannot use it, keep work with a coordinator using that model; otherwise report the limitation and request direction before substituting. Keep concrete model IDs in configuration, not in these instructions.

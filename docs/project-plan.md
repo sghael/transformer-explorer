@@ -1,12 +1,24 @@
 # Transformer Explorer implementation plan
 
-Status: specification and scaffold. The generator, viewer, and build commands described below are planned work. The initial implementation goal covers milestones 1 and 2. Later milestones define the route to a finished exhibit.
+Status: specification and scaffold. The generator, viewer, and build commands described below are planned work. The full implementation goal covers milestones 1–5. Milestones 1 and 2 produce an early working spatial preview; continue through the complete tutorial while accepting human steering.
 
 ## Outcome and scope
 
 Build a live 3D explanation for readers familiar with basic ML terminology but new to Transformer internals. After the tour, a visitor should trace a token through the model, explain what attention and expert routing each do, and distinguish model weights from the activations stored in the KV cache.
 
 Use the Mixtral preset and educational constraints in `../README.md`. Start with original lightweight procedural geometry, a short illustrative token sequence, and one detailed layer reused for all layer selections. Physics simulation, kinematic rigs, photorealistic assets, additional model families, and live inference are outside the initial scope.
+
+## Required asset and tutorial pipeline
+
+Generate the model with versioned Python scripts using Blender's `bpy` API, then
+export GLB with semantic metadata. Load that asset into the Three.js browser
+scene. Build the tutorial around navigating this same model: overview, layer
+extraction, attention and cache, expert routing, output, and generation loop.
+The browser supplies live camera control, explanatory labels, selection, token
+motion, and tour state; Blender renders are diagnostic evidence. A standalone
+video, an image of a model, or HTML cards standing in for the exported geometry
+do not fulfill the deliverable. One build command must regenerate the model and
+build the viewer. Blender MCP is optional; reproducible scripting is required.
 
 ## Spatial deliverable contract
 
@@ -70,7 +82,7 @@ Build a headless Python generator for input, embeddings, compact layer stack, on
 
 Create the Vite/React/TypeScript viewer. Load the GLB, inspect metadata, support orbit and picking, select any layer, and expand one detailed assembly. Add stack spacing, a persistent stack locator, and linked face-on matrix inspection for one GQA group with four Q heads and shared K/V surfaces. Use clearly labeled illustrative samples; the full computation comes in milestone 3. Implement a short deterministic overview → layer → attention group → router → output tour using absolute time. Keep browser camera control ownership explicit during playback, pause, Explore, and resume.
 
-Provide a development preview for continuous human steering. Keep the latest
+Provide a development preview for continuous human steering, reachable from a laptop browser on the same home LAN as the build host. Keep the latest
 successful build reachable while a replacement builds. A development-only review
 control shows its build ID/timestamp and copies the reproducible view context,
 with selectable text as a fallback. Feedback travels through the existing agent
@@ -79,7 +91,7 @@ chat; no new feedback service or command-execution endpoint is in scope. Follow
 
 Provide one documented command that regenerates assets and builds the production viewer. Use Blender background Python execution as the baseline; it supports scripted execution without driving its UI. A script can emit the project's JSON scene report. A Blender MCP connection is optional for interactive inspection and must not be required for reproduction. Verify flags against the installed version. [Blender command-line reference](https://docs.blender.org/manual/en/4.0/advanced/command_line/arguments.html)
 
-**Acceptance:** regenerate from a clean scene; build and serve production output; metadata and camera anchors survive export/loading; all 32 layers select correctly; only one detailed layer is visible; representative components pick correctly; orbit, pause/resume, and forward/backward seeking work. Meet the spatial proof above, including first, middle, and last layer round trips. Inspect two oblique overview angles, an expanded layer, one GQA group, its face-on matrix view, and the router. Verify the panel and 3D scene keep the same layer/group/token identity. Record console errors, build duration, GLB size, and initial render statistics. Mark incomplete computation demonstrations explicitly. Confirm that a failed rebuild leaves the last successful preview available, copied view context identifies the displayed build and state, and a reported view can be restored. Exercise one feedback-to-correction cycle when human feedback is available; otherwise record that the human cycle remains untested and verify context restoration independently.
+**Acceptance:** regenerate from a clean scene; build and serve production output; metadata and camera anchors survive export/loading; all 32 layers select correctly; only one detailed layer is visible; representative components pick correctly; orbit, pause/resume, and forward/backward seeking work. Meet the spatial proof above, including first, middle, and last layer round trips. Inspect two oblique overview angles, an expanded layer, one GQA group, its face-on matrix view, and the router. Verify the panel and 3D scene keep the same layer/group/token identity. Record console errors, build duration, GLB size, and initial render statistics. Mark incomplete computation demonstrations explicitly. Confirm that the server binds to `0.0.0.0`, the reported URL uses its actual startup port and a LAN-reachable address, and GLB/assets load over that address. Verify from the laptop when possible; otherwise mark laptop access unverified and request a one-time browser check without stopping independent work. Confirm that a failed rebuild leaves the last successful preview available, copied view context identifies the displayed build and state, and a reported view can be restored. Exercise one feedback-to-correction cycle when human feedback is available; otherwise record that the human cycle remains untested and verify context restoration independently.
 
 ## Milestone 3: Computational explanation
 

@@ -28,6 +28,40 @@ The model minimum is required; effort choices above it are starting points. Veri
 
 A long render or many tool calls alone do not justify high effort: rendering time is tool work. Spend additional reasoning on uncertain geometry, architecture, and acceptance decisions. Diagnose missing dependencies, poor task briefs, or tool failures before changing effort.
 
+## Skill boundaries
+
+This project's brief and acceptance criteria govern the work. Use a skill only
+when its specific tools or knowledge help the current increment. Do not restart
+product discovery or require repeated approval of choices already settled here.
+
+| Skill or workflow | Appropriate use here | Avoid for |
+| --- | --- | --- |
+| `impeccable` | Later refinement of HTML controls, typography, panels, accessibility, and responsive layout within the established brief | Transformer pedagogy, tensor/scene layout, Blender geometry, spatial acceptance, and initial project planning. Do not invoke its product interview or create duplicate PRODUCT/DESIGN documents as prerequisites |
+| `prototype` | A separately requested disposable experiment with a specific unresolved question | Replacing the required Blender-to-GLB pipeline or delivering a throwaway mockup as the exhibit |
+| `deep-clean`, `code-audit`, `thermo-nuclear-code-quality-review` | A separately scoped cleanup or review when concrete maintenance problems warrant it | Routine implementation, speculative restructuring, arbitrary line-count gates, or an obligatory cleanup campaign |
+| `tdd`, `diagnosing-bugs` | Requested test-first work or a difficult investigation where the method helps | Forcing an entire method on every small change, demanding approval for established test boundaries, or refusing useful inspection until a reproduction exists |
+| `routing-subagent-models` | None; the shared skill was retired | Reinstating generic model tiers or model IDs in skill prose; use project runtime configuration and current dispatch capabilities |
+
+Keep privacy checks, relevant tests, browser inspection, and the repository's
+actual PR/review requirements. These boundaries remove irrelevant ceremony, not
+verification. Explicit human feedback takes precedence over a skill's stylistic
+preferences; do not let a UI skill redefine the 3D teaching approach.
+
+## Fresh-context startup
+
+Read `../AGENTS.md`, `../AGENT_PROMPT.txt`, `../README.md`, this workflow,
+`project-plan.md`, `storyboard.md`, and `../shared/model-spec.json`. Read
+`progress.md` if it exists, then inspect the checkout and current build state;
+resume verified work rather than repeating completed milestones. Load only the
+private operating context supplied with the launch request. Do not depend on
+conversation history or treat the archived prompt as a second assignment.
+
+The full launch covers milestones 1–5, in order, with a usable preview by
+milestone 2. Expose a working spatial slice early and continue toward the complete
+tutorial while accepting feedback. If the human requests a smaller goal, honor
+that scope. A fresh agent should record its first bounded implementation step and
+start work without another planning-approval round.
+
 ## Spatial acceptance responsibilities
 
 Use the [spatial deliverable contract](project-plan.md#spatial-deliverable-contract)
@@ -63,7 +97,15 @@ invitation to inspect, not an approval gate. Silence permits continued work with
 the existing scope but is not evidence of human approval or learner comprehension.
 
 1. **Keep a reviewable preview available.** Once milestone 2 has a running viewer,
-   publish a reachable URL using the host's preview helper and actual server port.
+   bind the server to `0.0.0.0`, read its actual port from startup output, and
+   publish a URL using `agent-preview-url <port>`. The target is a laptop browser
+   on the same home LAN. Check that the helper chose a LAN-reachable address;
+   use its `AGENT_PREVIEW_HOST` override when necessary. Never give the human a
+   loopback or wildcard-host URL. Verify HTTP access through the LAN address
+   and, when access is available, from the laptop itself. A same-host check does
+   not prove laptop access; ask for a one-time browser check if necessary and
+   record that limitation while continuing independent implementation. Serve
+   model assets from the same reachable origin or another verified address.
    Keep the latest successful build available during edits or failed rebuilds.
    Identify it by a build ID and timestamp so an older render is not mistaken for
    current work. A commit hash alone does not identify uncommitted visual changes.
@@ -91,8 +133,10 @@ the existing scope but is not evidence of human approval or learner comprehensio
 Ordinary feedback steers the ongoing task. An explicit **pause work** stops new
 implementation actions at the next safe boundary until the human resumes. This
 is separate from the viewer's **pause tour**, which controls only its timeline.
-Scope expansion or actions requiring additional authorization still need that
-authorization. Do not infer it from a visual preference or from silence.
+The preview is a development service on the agreed LAN, not an Internet
+deployment. Keep actual machine addresses, raw feedback, and connection details
+in ignored private context. Scope expansion or actions requiring additional
+authorization still need that authorization. Do not infer it from a visual preference or from silence.
 
 The human sets aesthetic intent and evaluates whether the explanation feels clear.
 The agent supplies alternatives, implements them, and checks readability,
@@ -148,6 +192,6 @@ No Blender-specific effort optimum was established by the reviewed official sour
 
 ## Reusable implementation goal
 
-> Complete milestones 1 and 2 in docs/project-plan.md. Use the project-configured model for the coordinator and all workers, with low effort as the minimum; use the routing table for bounded workers, and verify each increment with structural checks and browser inspection. Record evidence and unresolved limitations in docs/progress.md. Finish with a reproducible build and usable 3D preview meeting the spatial contract: all 32 layers selectable, adjustable stack spacing, one expanded layer and GQA group, linked matrix reading, and a verified return to overview. Include paired camera views and interaction evidence; a successful export or flat diagram is insufficient. Stay within these milestones unless I expand the goal.
+> Complete milestones 1–5 in docs/project-plan.md: a reproducible Blender Python → GLB → interactive browser tutorial. Use project-configured models, follow the skill boundaries and human steering protocol, and deliver the LAN-accessible spatial preview by milestone 2. Continue through the complete tour, computational explanations, accessibility, and measured performance. Verify each increment, keep the latest successful preview available, and record evidence and remaining limitations in docs/progress.md. Human feedback may redirect work at any point; explicit pause-work requests stop implementation. Do not claim learner validation or laptop access without evidence. Do not substitute a static diagram, video, or placeholder for the navigable 3D exhibit.
 
 Set a token or time budget only when the user supplies one. This document supplies goal wording; it does not start an unattended run.
