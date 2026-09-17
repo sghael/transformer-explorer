@@ -1,0 +1,381 @@
+{
+  "schema_version": 1,
+  "duration": 80,
+  "illustrative": true,
+  "chapters": [
+    {
+      "id": "overview",
+      "title": "A decoder from input to output",
+      "start": 0,
+      "end": 6,
+      "duration": 6,
+      "view": "overview",
+      "cameraAnchor": "CAM_OVERVIEW",
+      "cameraTarget": [0, 0, 0],
+      "detailLevel": 0,
+      "selection": {
+        "layer": 11,
+        "group": 2,
+        "token": 6,
+        "expert": 4
+      },
+      "locator": true,
+      "emphasis": ["input", "layer_stack", "final_norm", "output"],
+      "dimming": ["unselected_layers", "unselected_groups"],
+      "visibility": [
+        "model_root",
+        "input",
+        "layer_stack",
+        "final_norm",
+        "output"
+      ],
+      "pose": {
+        "spacing": 1,
+        "expanded": false,
+        "expertExpanded": false
+      },
+      "animation": {
+        "kind": "flow",
+        "seed": 1729,
+        "cycles": 1
+      },
+      "caption": "Follow tokens through 32 decoder layers to scores for the next token. Depth separates sequential layers.",
+      "explanationKey": "overview",
+      "misconception": "The stack shows computation, not physical parameter placement.",
+      "acceptance": "All 32 slices and a continuous input-to-output path remain visible."
+    },
+    {
+      "id": "embedding",
+      "title": "Tokens become vectors",
+      "start": 6,
+      "end": 13,
+      "duration": 7,
+      "view": "input",
+      "cameraAnchor": "CAM_INPUT",
+      "cameraTarget": [-10, 0, 0],
+      "detailLevel": 1,
+      "selection": {
+        "layer": 11,
+        "group": 2,
+        "token": 6,
+        "expert": 4
+      },
+      "locator": true,
+      "emphasis": ["input", "embedding"],
+      "dimming": ["unselected_layers", "unselected_groups"],
+      "visibility": ["model_root", "input", "embedding"],
+      "pose": {
+        "spacing": 1,
+        "expanded": false,
+        "expertExpanded": false
+      },
+      "animation": {
+        "kind": "embedding",
+        "seed": 1729,
+        "cycles": 1
+      },
+      "caption": "Each illustrative token ID selects a learned embedding row: a vector with 4,096 coordinates.",
+      "explanationKey": "input.embedding",
+      "misconception": "Displayed chunks are illustrative; token vocabulary entries differ from context positions.",
+      "acceptance": "Token labels, illustrative IDs, embedding lookup and a sampled activation are readable."
+    },
+    {
+      "id": "stack",
+      "title": "Select a decoder layer",
+      "start": 13,
+      "end": 20,
+      "duration": 7,
+      "view": "layer",
+      "cameraAnchor": "CAM_LAYER",
+      "cameraTarget": [0, 0, 0],
+      "detailLevel": 1,
+      "selection": {
+        "layer": 11,
+        "group": 2,
+        "token": 6,
+        "expert": 4
+      },
+      "locator": true,
+      "emphasis": ["layer_stack", "focus_layer"],
+      "dimming": ["unselected_layers", "unselected_groups"],
+      "visibility": ["model_root", "layer_stack", "focus_layer"],
+      "pose": {
+        "spacing": 1.8,
+        "expanded": true,
+        "expertExpanded": false
+      },
+      "animation": {
+        "kind": "extract",
+        "seed": 1729,
+        "cycles": 1
+      },
+      "caption": "Every layer repeats this structure with its own weights. Open one layer while retaining its place in the stack.",
+      "explanationKey": "layer",
+      "misconception": "Reused geometry does not imply shared model weights.",
+      "acceptance": "Spacing reveals depth, one assembly opens, and its selected stack slot stays highlighted."
+    },
+    {
+      "id": "attention-entry",
+      "title": "Normalize, project, retain the residual",
+      "start": 20,
+      "end": 29,
+      "duration": 9,
+      "view": "layer",
+      "cameraAnchor": "CAM_LAYER",
+      "cameraTarget": [0, 0, 0],
+      "detailLevel": 1,
+      "selection": {
+        "layer": 11,
+        "group": 2,
+        "token": 6,
+        "expert": 4
+      },
+      "locator": true,
+      "emphasis": ["norm1", "attention", "residual1", "add1"],
+      "dimming": ["unselected_layers", "unselected_groups"],
+      "visibility": ["model_root", "norm1", "attention", "residual1", "add1"],
+      "pose": {
+        "spacing": 1,
+        "expanded": true,
+        "expertExpanded": false
+      },
+      "animation": {
+        "kind": "attention-entry",
+        "seed": 1729,
+        "cycles": 1
+      },
+      "caption": "RMSNorm scales the representation. Separate learned projections form Q, K and V, while the residual bypass retains the incoming activation.",
+      "explanationKey": "attention.entry",
+      "misconception": "The bypass carries the activation around attention and reconnects at addition.",
+      "acceptance": "RMSNorm, three projections, first bypass and addition are traceable."
+    },
+    {
+      "id": "attention",
+      "title": "Shared keys and values, causal attention",
+      "start": 29,
+      "end": 38,
+      "duration": 9,
+      "view": "attention",
+      "cameraAnchor": "CAM_ATTENTION",
+      "cameraTarget": [-5, 0, 0],
+      "detailLevel": 2,
+      "selection": {
+        "layer": 11,
+        "group": 2,
+        "token": 6,
+        "expert": 4
+      },
+      "locator": true,
+      "emphasis": ["attention", "rope", "causal_mask"],
+      "dimming": ["unselected_layers", "unselected_groups"],
+      "visibility": ["model_root", "attention", "rope", "causal_mask"],
+      "pose": {
+        "spacing": 1,
+        "expanded": true,
+        "expertExpanded": false
+      },
+      "animation": {
+        "kind": "attention",
+        "seed": 1729,
+        "cycles": 1
+      },
+      "caption": "Four query heads share one K/V pair. RoPE rotates Q and K by position. Causal attention gathers values only from the current and earlier tokens.",
+      "explanationKey": "attention",
+      "misconception": "Values do not receive the Q/K positional rotation; future tokens receive zero weight.",
+      "acceptance": "Four Q sheets connect to one K/V pair; allowed weights sum to one and future links are absent."
+    },
+    {
+      "id": "cache",
+      "title": "Keep earlier keys and values",
+      "start": 38,
+      "end": 45,
+      "duration": 7,
+      "view": "cache",
+      "cameraAnchor": "CAM_CACHE",
+      "cameraTarget": [-5, 0, 0],
+      "detailLevel": 2,
+      "selection": {
+        "layer": 11,
+        "group": 2,
+        "token": 6,
+        "expert": 4
+      },
+      "locator": true,
+      "emphasis": ["kv_cache"],
+      "dimming": ["unselected_layers", "unselected_groups"],
+      "visibility": ["model_root", "kv_cache"],
+      "pose": {
+        "spacing": 1,
+        "expanded": true,
+        "expertExpanded": false
+      },
+      "animation": {
+        "kind": "cache",
+        "seed": 1729,
+        "cycles": 1
+      },
+      "caption": "Prefill stores the prompt\u2019s keys and values in every layer. Decode adds the new token\u2019s entries and reuses the retained rows.",
+      "explanationKey": "cache",
+      "misconception": "The cache stores per-layer activations, not weights or precomputed answers.",
+      "acceptance": "Token-position rows remain unchanged as one new row appears in each K/V sheet."
+    },
+    {
+      "id": "router",
+      "title": "Choose two of eight experts",
+      "start": 45,
+      "end": 56,
+      "duration": 11,
+      "view": "router",
+      "cameraAnchor": "CAM_MOE",
+      "cameraTarget": [4, 0, 0],
+      "detailLevel": 2,
+      "selection": {
+        "layer": 11,
+        "group": 2,
+        "token": 6,
+        "expert": 4
+      },
+      "locator": true,
+      "emphasis": ["add1", "norm2", "moe_router", "experts"],
+      "dimming": ["unselected_layers", "unselected_groups"],
+      "visibility": ["model_root", "add1", "norm2", "moe_router", "experts"],
+      "pose": {
+        "spacing": 1,
+        "expanded": true,
+        "expertExpanded": false
+      },
+      "animation": {
+        "kind": "routing",
+        "seed": 1729,
+        "cycles": 1
+      },
+      "caption": "After the attention residual and second RMSNorm, a router scores eight experts for this token. The two selected probabilities are renormalized to sum to one.",
+      "explanationKey": "moe.router",
+      "misconception": "Expert selection varies by token and layer; these experts have no assigned topic labels.",
+      "acceptance": "Eight logits and probabilities, exactly two routes, normalized selected weights, and both residual paths are inspectable."
+    },
+    {
+      "id": "experts",
+      "title": "Transform, weight and merge",
+      "start": 56,
+      "end": 66,
+      "duration": 10,
+      "view": "expert",
+      "cameraAnchor": "CAM_EXPERT",
+      "cameraTarget": [5, 0, 0],
+      "detailLevel": 2,
+      "selection": {
+        "layer": 11,
+        "group": 2,
+        "token": 6,
+        "expert": 4
+      },
+      "locator": true,
+      "emphasis": ["expert_detail", "merge", "residual2", "add2"],
+      "dimming": ["unselected_layers", "unselected_groups"],
+      "visibility": [
+        "model_root",
+        "expert_detail",
+        "merge",
+        "residual2",
+        "add2"
+      ],
+      "pose": {
+        "spacing": 1,
+        "expanded": true,
+        "expertExpanded": true
+      },
+      "animation": {
+        "kind": "merge",
+        "seed": 1729,
+        "cycles": 1
+      },
+      "caption": "Each selected expert transforms the same activation with gate/up projections, SiLU, multiplication and down projection. Their weighted output vectors merge before the residual addition.",
+      "explanationKey": "moe.expert",
+      "misconception": "Routing combines expert output vectors, not the learned expert weights.",
+      "acceptance": "Only one expert detail opens; two weighted outputs reach the merge and residual addition."
+    },
+    {
+      "id": "output",
+      "title": "Compute vocabulary scores",
+      "start": 66,
+      "end": 74,
+      "duration": 8,
+      "view": "output",
+      "cameraAnchor": "CAM_LM_HEAD",
+      "cameraTarget": [12, 0, 0],
+      "detailLevel": 1,
+      "selection": {
+        "layer": 11,
+        "group": 2,
+        "token": 6,
+        "expert": 4
+      },
+      "locator": true,
+      "emphasis": ["layer_stack", "final_norm", "lm_head", "output"],
+      "dimming": ["unselected_layers", "unselected_groups"],
+      "visibility": [
+        "model_root",
+        "layer_stack",
+        "final_norm",
+        "lm_head",
+        "output"
+      ],
+      "pose": {
+        "spacing": 1,
+        "expanded": false,
+        "expertExpanded": false
+      },
+      "animation": {
+        "kind": "output",
+        "seed": 1729,
+        "cycles": 1
+      },
+      "caption": "The representation passes through the remaining layers and final RMSNorm. The LM head produces vocabulary logits; a selection rule chooses the next token.",
+      "explanationKey": "output",
+      "misconception": "Logits are scores; token selection is a separate step. Candidate probabilities here are illustrative.",
+      "acceptance": "Remaining layers, final normalization, logits and next-token selection appear in order."
+    },
+    {
+      "id": "decode",
+      "title": "Continue with the new token",
+      "start": 74,
+      "end": 80,
+      "duration": 6,
+      "view": "overview",
+      "cameraAnchor": "CAM_OVERVIEW",
+      "cameraTarget": [0, 0, 0],
+      "detailLevel": 0,
+      "selection": {
+        "layer": 11,
+        "group": 2,
+        "token": 6,
+        "expert": 4
+      },
+      "locator": true,
+      "emphasis": ["input", "kv_cache", "layer_stack", "output"],
+      "dimming": ["unselected_layers", "unselected_groups"],
+      "visibility": [
+        "model_root",
+        "input",
+        "kv_cache",
+        "layer_stack",
+        "output"
+      ],
+      "pose": {
+        "spacing": 1,
+        "expanded": false,
+        "expertExpanded": false
+      },
+      "animation": {
+        "kind": "decode",
+        "seed": 1729,
+        "cycles": 1
+      },
+      "caption": "Append the chosen token and run its next decode step through every layer, reusing earlier K/V entries. Pause anywhere to explore the same model.",
+      "explanationKey": "decode",
+      "misconception": "Cached decode processes the new position while reusing the prompt\u2019s stored keys and values.",
+      "acceptance": "One appended position follows the return path; retained cache rows remain visible on inspection."
+    }
+  ]
+}
