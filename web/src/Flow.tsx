@@ -1,4 +1,4 @@
-import { Html, Line } from "@react-three/drei";
+import { Line } from "@react-three/drei";
 import type { View } from "./data";
 import { pointAlongPath, routerPaths, type Point } from "./spatial";
 
@@ -9,6 +9,7 @@ type Props = {
   token: number;
   spacing: number;
   experts: number[];
+  expert: number;
 };
 type Kind = "token" | "vector" | "tensor";
 function Packet({
@@ -69,16 +70,31 @@ function Track({
     </>
   );
 }
-const caption = {
-  color: "#f5e7c6",
-  background: "#17242cee",
-  border: "1px solid #716342",
-  borderRadius: 5,
-  padding: "5px 8px",
-  whiteSpace: "nowrap" as const,
-  fontSize: 12,
-  pointerEvents: "none" as const,
-};
+export function flowDescription(view: View, time: number): string {
+  const phase = (time % 12) / 12;
+  if (["overview", "input", "output"].includes(view)) {
+    if (phase < 0.12) return "Token ID → embedding lookup";
+    if (phase < 0.28) return "Prompt positions × channels → prefill";
+    if (phase < 0.65) return "Hidden vector → 32 sequential layers";
+    if (phase < 0.82) return "Final norm → logits → select next token";
+    return "New token returns · next decode step reuses K/V";
+  }
+  if (view === "layer")
+    return "Activation vector → normalization → attention → residual → experts → residual";
+  if (view === "router")
+    return phase < 0.45
+      ? "One activation vector → two selected experts"
+      : "Two transformed vectors → weighted sum";
+  if (view === "expert")
+    return "Gate and up vectors → elementwise product → down projection";
+  if (view === "cache")
+    return phase >= 0.5
+      ? "Decode: append this token’s new K/V vectors"
+      : "Read retained K/V · no prompt recomputation";
+  return phase < 0.5
+    ? "Query and keys → match scores → causal mask"
+    : "Attention weights × value vectors → weighted sum";
+}
 /** A 12-second schematic cycle. Markers are sampled representations, not inference. */
 export default function Flow({
   view,
@@ -87,67 +103,62 @@ export default function Flow({
   token,
   spacing,
   experts,
+  expert,
 }: Props) {
   const phase = (time % 12) / 12;
   const z = (group - 3.5) * 1.2;
-  let message = "";
   let tracks: React.ReactNode;
   if (["overview", "input", "output"].includes(view)) {
-    const first = -4.96 * spacing,
-      last = 4.96 * spacing;
-    const stages: { end: number; points: Point[]; kind: Kind; text: string }[] =
-      [
-        {
-          end: 0.12,
-          points: [
-            [-8, 0.6, 0],
-            [-5.5, 0.6, 0],
-          ],
-          kind: "token",
-          text: "Token ID → embedding lookup",
-        },
-        {
-          end: 0.65,
-          points: [
-            [-5.5, 0.6, 0],
-            [-5.5, 0.6, first],
-            [0, 0.6, first],
-            [0, 0.6, last],
-          ],
-          kind: phase < 0.28 ? "tensor" : "vector",
-          text:
-            phase < 0.28
-              ? "Prompt positions × channels → prefill"
-              : "Hidden vector → 32 sequential layers",
-        },
-        {
-          end: 0.82,
-          points: [
-            [0, 0.6, last],
-            [4.8, 0.6, last],
-            [4.8, 0.6, 0],
-            [7, 0.6, 0],
-            [9.5, 0.6, 0],
-          ],
-          kind: "vector",
-          text: "Final norm → logits → select next token",
-        },
-        {
-          end: 1,
-          points: [
-            [9.5, 0.6, 0],
-            [9.5, -3.2, 0],
-            [-8, -3.2, 0],
-            [-8, 0.6, 0],
-          ],
-          kind: "token",
-          text: "New token returns · next decode step reuses K/V",
-        },
-      ];
+    const first = -4.96 * spacing - 0.11,
+      last = 4.96 * spacing + 0.11;
+    const stages: { end: number; points: Point[]; kind: Kind }[] = [
+      {
+        end: 0.12,
+        points: [
+          [-8, 0, 0],
+          [-5.5, 0, 0],
+        ],
+        kind: "token",
+      },
+      {
+        end: 0.65,
+        points: [
+          [-5.5, 0, 0],
+          [-3, 0, 0],
+          [-3, 0, first],
+          [0, 0, first],
+          [0, 0, last],
+        ],
+        kind: phase < 0.28 ? "tensor" : "vector",
+      },
+      {
+        end: 0.82,
+        points: [
+          [0, 0, last],
+          [3, 0, last],
+          [3, 0, 0],
+          [4.8, 0, 0],
+          [7, 0, 0],
+          [9.5, 0, 0],
+        ],
+        kind: "vector",
+      },
+      {
+        end: 1,
+        points: [
+          [9.5, 0, 0],
+          [11, 0, 0],
+          [11, 0, last + 1.73],
+          [-9, 0, last + 1.73],
+          [-9, 0, 0],
+          [-8, 0, 0],
+        ],
+        kind: "token",
+      },
+    ];
     const i = stages.findIndex((stage) => phase < stage.end),
       stage = stages[Math.max(0, i)];
     const start = i > 0 ? stages[i - 1].end : 0;
-    message = stage.text;
     tracks = (
       <>
         <Track
@@ -165,36 +176,94 @@ export default function Flow({
       </>
     );
   } else if (view === "layer") {
-    message =
-      "Activation vector → normalization → attention → residual → experts → residual";
+    const attention = [
+      [-7, 0, 0],
+      [-7, 0, z],
+      [-7, -0.35, z],
+      [-5.9, -0.35, z],
+      [-5.9, -0.35, z - 0.315],
+      [-5.9, 1.9, z - 0.315],
+      [-3.35, 1.9, z - 0.315],
+      [-3.35, 1.9, z],
+      [-3.35, 0.5, z],
+      [-3.35, 0, z],
+      [-3.3, 0, z],
+      [-3.3, 0, 0],
+      [-1, 0, 0],
+    ] as Point[];
     tracks = (
       <>
+        {phase < 0.12 ? (
+          <Track
+            points={[
+              [-9, 0, 0],
+              [-7, 0, 0],
+            ]}
+            progress={phase / 0.12}
+          />
+        ) : phase < 0.4 ? (
+          <Track points={attention} progress={(phase - 0.12) / 0.28} />
+        ) : phase < 0.5 ? (
+          <Track
+            points={[
+              [-1, 0, 0],
+              [2.25, 0, 0],
+            ]}
+            progress={(phase - 0.4) / 0.1}
+          />
+        ) : phase < 0.88 ? (
+          experts.map((e, i) => {
+            const depth = (e - 3.5) * 1.1;
+            return (
+              <Track
+                key={e}
+                points={[
+                  ...routerPaths(e).input,
+                  [4.32, 0, depth],
+                  [4.32, 0, depth - 0.15],
+                  [4.52, 0, depth - 0.15],
+                  [5.06, 0, depth - 0.15],
+                  [5.06, 0, depth],
+                  [5.48, 0, depth],
+                  ...routerPaths(e).output,
+                ]}
+                progress={(phase - 0.5) / 0.38}
+                color={i ? "#70d8cc" : "#ffe1a0"}
+              />
+            );
+          })
+        ) : (
+          <Track
+            points={[
+              [7.75, 0, 0],
+              [11, 0, 0],
+            ]}
+            progress={(phase - 0.88) / 0.12}
+          />
+        )}
         <Track
-          points={[
-            [-9, 0.2, 0],
-            [11, 0.2, 0],
-          ]}
-          progress={phase}
+          points={
+            phase < 0.4
+              ? [
+                  [-9, 0, 0],
+                  [-9, 0, -5.4],
+                  [-2, 0, -5.4],
+                  [-2, 0, 0],
+                ]
+              : [
+                  [-1, 0, 0],
+                  [-1, 0, 5.4],
+                  [10, 0, 5.4],
+                  [10, 0, 0],
+                ]
+          }
+          progress={phase < 0.4 ? phase / 0.4 : (phase - 0.4) / 0.6}
+          color="#aebfc3"
         />
-        {phase > 0.45 &&
-          experts.map((expert, i) => (
-            <Track
-              key={expert}
-              points={[
-                ...routerPaths(expert).input,
-                ...routerPaths(expert).output,
-              ]}
-              progress={(phase - 0.45) / 0.55}
-              color={i ? "#70d8cc" : "#ffe1a0"}
-            />
-          ))}
       </>
     );
   } else if (view === "router") {
     const input = phase < 0.45;
-    message = input
-      ? "One activation vector → two selected experts"
-      : "Two transformed vectors → weighted sum";
     tracks = experts.map((expert, i) => (
       <Track
         key={expert}
@@ -204,50 +273,77 @@ export default function Flow({
       />
     ));
   } else if (view === "expert") {
-    message = "Gate and up vectors → elementwise product → down projection";
-    tracks = [-0.5, 0.5].map((depth, i) => (
-      <Track
-        key={depth}
-        points={[
-          [4, -2, depth],
-          [5.8, -2, depth],
-          [5.8, -2, 0],
-          [6.8, -2, 0],
-        ]}
-        progress={phase}
-        color={i ? "#70d8cc" : "#ffe1a0"}
-      />
-    ));
+    tracks = (
+      <group position={[4.82, -0.3, (expert - 3.5) * 1.1]} scale={0.3}>
+        {[-0.5, 0.5].map((depth, i) => (
+          <Track
+            key={depth}
+            points={[
+              [-1.9, 1, 0],
+              [-1.6667, 1, 0],
+              [-1.6667, 1, depth],
+              [-1, 1, depth],
+              [0.8, 1, depth],
+              [0.8, 1, 0],
+              [1.8, 1, 0],
+              [3.1, 1, 0],
+            ]}
+            progress={phase}
+            color={i ? "#70d8cc" : "#ffe1a0"}
+          />
+        ))}
+      </group>
+    );
   } else if (view === "cache") {
     const append = phase >= 0.5;
-    message = append
-      ? "Decode: append this token’s new K/V vectors"
-      : "Read retained K/V · no prompt recomputation";
-    tracks = [-5, -2.7].map((x, i) => (
-      <Track
-        key={x}
-        points={
-          append
-            ? [
-                [-7, -3.9, z + 0.35],
-                [x, -3.9, z + 0.35],
-                [x, -3.56, z + 0.35],
-              ]
-            : [
-                [x, -1.8 - token * 0.22, z + 0.35],
-                [x, -1.1, z + 0.35],
-                [-1, -1.1, z + 0.35],
-              ]
-        }
-        progress={append ? (phase - 0.5) * 2 : phase * 2}
-        color={i ? "#bf9be9" : "#70d8cc"}
-      />
-    ));
+    tracks = [-5.36, -4.44].map((x, i) => {
+      const write: Point[] = i
+        ? [
+            [-3.85, 0.5, z + 0.48],
+            [-3.85, -1.964, z + 0.48],
+            [x, -1.964, z + 0.48],
+            [x, -1.964, z],
+          ]
+        : [
+            [-4.92, 1.9, z + 0.48],
+            [-4.6, 1.9, z + 0.48],
+            [-4.6, -1.964, z + 0.48],
+            [-5, -1.964, z + 0.48],
+            [-5, -1.964, z],
+            [x, -1.964, z],
+          ];
+      const read: Point[] = [
+        [x, -2.014 - token * 0.088, z + 0.025],
+        [x, -2.014 - token * 0.088, z],
+        [x, -2.36, z],
+        [x + 0.36, -2.36, z],
+      ];
+      read.push(
+        ...((i
+          ? [
+              [-3.75, -2.36, z],
+              [-3.75, 0.5, z],
+              [-3.525, 0.5, z],
+            ]
+          : [
+              [-4.85, -2.36, z],
+              [-4.85, 2.1, z],
+              [-3.35, 2.1, z],
+              [-3.35, 1.9, z],
+            ]) as Point[]),
+      );
+      return (
+        <Track
+          key={x}
+          points={
+            append ? [...write, [x, -2.718, z], [x, -2.718, z + 0.025]] : read
+          }
+          progress={append ? (phase - 0.5) * 2 : phase * 2}
+          color={i ? "#bf9be9" : "#70d8cc"}
+        />
+      );
+    });
   } else {
-    message =
-      phase < 0.5
-        ? "Query and keys → match scores → causal mask"
-        : "Attention weights × value vectors → weighted sum";
     tracks =
       view === "matrix" ? (
         <Track
@@ -264,46 +360,26 @@ export default function Flow({
           points={
             phase < 0.5
               ? [
-                  [-7.1, 1, z],
-                  [-5.8, 1, z],
-                  [-5.8, 1.45, z],
-                  [-3.35, 1.45, z],
+                  [-7, 0, z],
+                  [-7, -0.35, z],
+                  [-5.9, -0.35, z],
+                  [-5.9, -0.35, z - 0.315],
+                  [-5.9, 1.9, z - 0.315],
+                  [-3.35, 1.9, z - 0.315],
+                  [-3.35, 1.9, z],
                 ]
               : [
                   [-3.35, 1.45, z],
-                  [-3.35, -0.2, z],
-                  [-5.5, -0.2, z],
-                  [-2.8, -0.2, z],
+                  [-3.35, 0.5, z],
+                  [-3.35, 0, z],
+                  [-3.3, 0, z],
+                  [-3.3, 0, 0],
+                  [-2.925, 0, 0],
                 ]
           }
           progress={phase < 0.5 ? phase * 2 : (phase - 0.5) * 2}
         />
       );
   }
-  return (
-    <group name="computation-flow">
-      {tracks}
-      <Html
-        fullscreen
-        calculatePosition={(_object, _camera, size) => [
-          size.width / 2,
-          size.height / 2,
-        ]}
-        style={{ pointerEvents: "none" }}
-      >
-        <div
-          style={{
-            ...caption,
-            position: "absolute",
-            top: 12,
-            left: 12,
-            maxWidth: "calc(100% - 24px)",
-            whiteSpace: "normal",
-          }}
-        >
-          {message}
-        </div>
-      </Html>
-    </group>
-  );
+  return <group name="computation-flow">{tracks}</group>;
 }

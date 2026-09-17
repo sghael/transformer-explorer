@@ -8,17 +8,13 @@ export function routerPaths(expert: number): {
     input: [
       [2.25, 0, 0],
       [3.15, 0, 0],
-      [3.15, 1, 0],
-      [3.15, 1, z],
-      [4.25, 1, z],
+      [3.15, 0, z],
       [4.25, 0, z],
     ],
     output: [
       [5.75, 0, z],
       [6.4, 0, z],
-      [6.4, 1, z],
-      [6.4, 1, 0],
-      [7.75, 1, 0],
+      [6.4, 0, 0],
       [7.75, 0, 0],
     ],
   };
@@ -47,14 +43,4 @@ export function pointAlongPath(points: Point[], progress: number): Point {
     remaining -= lengths[i];
   }
   return points[points.length - 1];
-}
-export function attentionPath(group: number, key: number): Point[] {
-  const z = (group - 3.5) * 1.2 + 1.2;
-  const x = -7 + key * 0.53;
-  return [
-    [-7.6, -0.65, z],
-    [-7.6, -1.05, z],
-    [x, -1.05, z],
-    [x, -1.65, z],
-  ];
 }

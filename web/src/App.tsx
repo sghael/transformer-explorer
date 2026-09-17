@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Scene, { type CameraPose, type Selection } from "./Scene";
+import { flowDescription } from "./Flow";
 import { inspectRmsNorm } from "./inspection";
+import EvidenceStrip, {
+  ProbabilityBar,
+  ProbabilityScale,
+} from "./EvidenceStrip";
 import {
   sample,
   tokens,
@@ -94,17 +99,17 @@ function explainShape(selection: Selection, decode: boolean): ShapeExplanation {
     layer: {
       title: `Layer ${layer}: residual stream`,
       kind: "Activations and operations",
-      role: "The solid connecting path carries a token vector. Open normalization frames and attention or expert processing modify it; each + junction adds a bypassed vector.",
+      role: "Connections carry tensors between operations. Solid RMSNorm nodes rescale each token vector; attention and the expert network transform it; each + junction adds the bypassed vector.",
       dimensions: `${hidden} channels enter and leave each sublayer. Both residual additions preserve this width.`,
       arrangement:
-        "Attention groups and expert alternatives separate in depth within this one layer. The dashed line links the selected stack slice to this expanded view; it represents magnification.",
+        "The layer interior is nested inside its selected stack frame. Attention groups and expert alternatives separate in depth within that interior; their dimensions are schematic.",
     },
     attention: {
       title: `Group ${selection.group + 1}: Q / K / V projections`,
       kind: "Learned projection weights",
-      role: "Each matrix sheet maps an activation into a query, key or value vector. The small score grid contains runtime attention weights.",
+      role: "Each learned matrix maps an activation into a query, key or value vector. Q and K produce per-head attention weights; each head uses those weights to combine the shared V vectors. The score panel displays one illustrative head from this four-head group.",
       dimensions: `${hidden} → ${head} channels per head (${head} × ${hidden} weights). ${architecture.attention_heads} Q heads share ${architecture.kv_heads} K/V pairs.`,
-      arrangement: `${queriesPerGroup} Q sheets share this K/V pair. Numbered key endpoints identify token positions, not additional heads.`,
+      arrangement: `${queriesPerGroup} Q sheets share this K/V pair. The attention table compares token positions; its rows and columns do not represent additional heads.`,
     },
     cache: {
       title: `Layer ${layer} / group ${selection.group + 1}: K/V cache`,
@@ -565,14 +570,9 @@ export default function App() {
               <output>{flowTime.toFixed(1)} / 12 s</output>
             </div>
             <p>
-              Illustrative cycle ·{" "}
-              {flowTime < 4
-                ? "input enters the operation"
-                : flowTime < 8
-                  ? "the selected operation transforms the activation"
-                  : "output continues to the next stage"}
-              . This repeating demonstration is separate from model inference
-              and the guided tour.
+              {flowDescription(state.view, flowTime)} . This repeating
+              demonstration is separate from model inference and the guided
+              tour.
             </p>
           </div>
           <div className="tour">
@@ -715,6 +715,12 @@ export default function App() {
               </div>
             </dl>
             <p className="shape-scale">
+              Open frames enclose subgraphs. Solid nodes apply operations.
+              Matrix panels hold learned weights or runtime arrays, identified
+              by their labels. Moving points, bundles and grids represent token
+              IDs, vectors and tensors.
+            </p>
+            <p className="shape-scale">
               Geometry is schematic. Shape size, thickness and displayed cells
               do not encode parameter counts.
             </p>
@@ -769,7 +775,7 @@ export default function App() {
                     activation vector
                   </h3>
                   <p>
-                    The open frame represents an operation. RMSNorm divides all
+                    The solid node represents an operation. RMSNorm divides all
                     channels by one root mean square denominator, then applies a
                     learned scale γ to each channel.
                   </p>
@@ -883,12 +889,17 @@ export default function App() {
           {["attention", "matrix"].includes(state.view) && (
             <>
               <h3>Causal attention</h3>
-              <p>
-                Query {state.token + 1} reads positions 1–{state.token + 1}.
-                Future positions are masked.
-              </p>
+              <EvidenceStrip
+                label={`Query ${state.token + 1} · weights by key position`}
+                rows={data.attention[state.token].map((value, key) => ({
+                  id: `key-${key}`,
+                  label: `K${key + 1} · ${tokens[key]}`,
+                  value,
+                  masked: key > state.token,
+                }))}
+              />
               <div className="table-scroll">
-                <table>
+                <table className="attention-evidence-table">
                   <caption>Query rows × key columns · 8 × 8 example</caption>
                   <thead>
                     <tr>
@@ -1012,14 +1023,24 @@ export default function App() {
           {["router", "expert"].includes(state.view) && (
             <>
               <h3>Two selected expert outputs</h3>
-              <table>
-                <caption>Router values for token {state.token + 1}</caption>
+              <table className="router-evidence-table">
+                <caption>
+                  Token {state.token + 1} · all {architecture.experts} routing
+                  alternatives
+                </caption>
                 <thead>
                   <tr>
                     <th>Expert</th>
                     <th>Logit</th>
-                    <th>Probability</th>
-                    <th>Merge weight</th>
+                    <th>
+                      Probability
+                      <ProbabilityScale />
+                    </th>
+                    <th>
+                      Normalized
+                      <br />
+                      merge weight
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1036,9 +1057,23 @@ export default function App() {
                         >
                           {i + 1}
                         </button>
+                        {data.router.top2.includes(i) && (
+                          <span
+                            className="expert-selected-mark"
+                            aria-label="Selected expert"
+                          >
+                            {" "}
+                            ✓
+                          </span>
+                        )}
                       </th>
                       <td>{v.toFixed(2)}</td>
-                      <td>{data.router.probabilities[i].toFixed(3)}</td>
+                      <td>
+                        <ProbabilityBar
+                          value={data.router.probabilities[i]}
+                          selected={data.router.top2.includes(i)}
+                        />
+                      </td>
                       <td>
                         {data.router.top2.includes(i)
                           ? data.router.weights[
@@ -1054,7 +1089,8 @@ export default function App() {
                 Expert {data.router.top2[0] + 1} ×{" "}
                 {data.router.weights[0].toFixed(3)} + expert{" "}
                 {data.router.top2[1] + 1} × {data.router.weights[1].toFixed(3)}.
-                These weights sum to one.
+                Selected probabilities are renormalized over this pair; these
+                merge weights sum to one.
               </p>
               <details>
                 <summary>Follow the output vectors</summary>

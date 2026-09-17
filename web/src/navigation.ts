@@ -1,71 +1,24 @@
 import * as THREE from "three";
+import type { View } from "./data";
 export type CameraPose = { position: number[]; target: number[] };
-export const timing = { out: 0.7, context: 1, aim: 0.7, into: 1.3 };
-export const duration = timing.out + timing.context + timing.aim + timing.into;
+export const FOCUS_SCALE = 0.022;
 export const ease = (t: number) => {
   const x = THREE.MathUtils.clamp(t, 0, 1);
   return x * x * x * (10 + x * (-15 + 6 * x));
 };
-type NodePose = {
-  position: THREE.Vector3;
-  scale: THREE.Vector3;
-  alpha: number;
-};
-export type ScenePose = Map<THREE.Object3D, NodePose>;
-function visible(object: THREE.Object3D) {
-  for (let o: THREE.Object3D | null = object; o; o = o.parent)
-    if (!o.visible) return false;
-  return true;
+export function layerOrigin(
+  layer: number,
+  spacing: number,
+): [number, number, number] {
+  return [0, 0, (layer - 15.5) * 0.32 * spacing];
 }
-export function captureScene(scene: THREE.Object3D): ScenePose {
-  const pose: ScenePose = new Map();
-  scene.traverse((object) => {
-    const material =
-      object instanceof THREE.Mesh ? (object.material as THREE.Material) : null;
-    pose.set(object, {
-      position: object.position.clone(),
-      scale: object.scale.clone(),
-      alpha: visible(object) ? (material?.opacity ?? 1) : 0,
-    });
-  });
-  return pose;
-}
-export function resetOpacity(scene: THREE.Object3D) {
-  scene.traverse((object) => {
-    if (object instanceof THREE.Mesh) {
-      const material = object.material as THREE.Material;
-      if (material.transparent) {
-        material.transparent = false;
-        material.needsUpdate = true;
-      }
-      material.opacity = 1;
-      material.depthWrite = true;
-    }
-  });
-}
-export function blendScene(from: ScenePose, to: ScenePose, progress: number) {
-  const u = ease(progress);
-  from.forEach((start, object) => {
-    const end = to.get(object)!;
-    // Fading context stays in place. New detail appears at its actual destination.
-    const a = start.alpha === 0 ? end : start;
-    const b = end.alpha === 0 ? a : end;
-    object.position.lerpVectors(a.position, b.position, u);
-    object.scale.lerpVectors(a.scale, b.scale, u);
-    object.visible = true;
-    if (object instanceof THREE.Mesh) {
-      const alpha = THREE.MathUtils.lerp(start.alpha, end.alpha, u);
-      const material = object.material as THREE.Material;
-      const transparent = alpha < 0.999;
-      if (material.transparent !== transparent) {
-        material.transparent = transparent;
-        material.needsUpdate = true;
-      }
-      material.opacity = alpha;
-      material.depthWrite = !transparent;
-      object.visible = alpha > 0.001;
-    }
-  });
+export function inLayer(
+  point: number[],
+  layer: number,
+  spacing: number,
+): number[] {
+  const origin = layerOrigin(layer, spacing);
+  return point.map((v, i) => origin[i] + v * FOCUS_SCALE);
 }
 /** Interpolate viewing scale logarithmically, with a smooth rotation around the target. */
 export function cameraBetween(
@@ -94,22 +47,88 @@ export function cameraBetween(
   };
 }
 
-/** Aim from a distance first; the subsequent dolly keeps heading and target fixed. */
-export function approachPose(
-  wide: CameraPose,
-  destination: CameraPose,
-): CameraPose {
-  const target = new THREE.Vector3(...destination.target);
-  const offset = new THREE.Vector3(...destination.position).sub(target);
-  const wideDistance = new THREE.Vector3(...wide.position).distanceTo(
-    new THREE.Vector3(...wide.target),
-  );
-  const distance = Math.max(wideDistance, offset.length() * 1.4);
-  return {
-    target: target.toArray(),
-    position: target
-      .clone()
-      .addScaledVector(offset.normalize(), distance)
-      .toArray(),
+const parent: Partial<Record<View, View>> = {
+  input: "overview",
+  output: "overview",
+  layer: "overview",
+  attention: "layer",
+  router: "layer",
+  cache: "attention",
+  matrix: "attention",
+  expert: "router",
+};
+function ancestors(view: View): View[] {
+  const result: View[] = [view];
+  while (parent[view]) {
+    view = parent[view]!;
+    result.push(view);
+  }
+  return result;
+}
+export type FlightLeg = {
+  from: CameraPose;
+  to: CameraPose;
+  seconds: number;
+  phase: "aim" | "zoom-in" | "zoom-out";
+};
+/** Parent-child navigation flies directly through existing geometry. Only siblings
+ * withdraw to their shared parent before approaching another branch. */
+export function planFlight(
+  fromView: View,
+  toView: View,
+  from: CameraPose,
+  to: CameraPose,
+  poseFor: (view: View) => CameraPose,
+): FlightLeg[] {
+  const fromChain = ancestors(fromView),
+    toChain = ancestors(toView);
+  const legs: FlightLeg[] = [];
+  let start = from;
+  const add = (end: CameraPose, phase: FlightLeg["phase"], seconds: number) => {
+    legs.push({ from: start, to: end, phase, seconds });
+    start = end;
   };
+  if (fromChain.includes(toView) && fromView !== toView) {
+    add(to, "zoom-out", 2.1);
+    return legs;
+  }
+  if (!toChain.includes(fromView)) {
+    const common =
+      fromChain.slice(1).find((view) => toChain.includes(view)) ?? "overview";
+    add(poseFor(common), "zoom-out", 1.2);
+  }
+  // Turn the gaze without moving the eye, then keep the destination centered.
+  add({ position: [...start.position], target: [...to.target] }, "aim", 0.55);
+  const a = new THREE.Vector3(...start.position).distanceTo(
+    new THREE.Vector3(...to.target),
+  );
+  const b = new THREE.Vector3(...to.position).distanceTo(
+    new THREE.Vector3(...to.target),
+  );
+  add(
+    to,
+    "zoom-in",
+    THREE.MathUtils.clamp(1.15 + Math.abs(Math.log(a / b)) * 0.32, 1.3, 3),
+  );
+  return legs;
+}
+export function flightPose(legs: FlightLeg[], elapsed: number) {
+  let t = elapsed;
+  for (const leg of legs) {
+    if (t <= leg.seconds) {
+      const u = t / leg.seconds;
+      const pose =
+        leg.phase === "aim"
+          ? {
+              position: [...leg.from.position],
+              target: leg.from.target.map((v, i) =>
+                THREE.MathUtils.lerp(v, leg.to.target[i], ease(u)),
+              ),
+            }
+          : cameraBetween(leg.from, leg.to, u);
+      return { pose, phase: leg.phase, done: false };
+    }
+    t -= leg.seconds;
+  }
+  return { pose: legs.at(-1)!.to, phase: legs.at(-1)!.phase, done: true };
 }

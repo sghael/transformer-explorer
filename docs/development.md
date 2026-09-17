@@ -51,4 +51,4 @@ With `PREVIEW_URL` set, run `node web/browser-checks.mjs` for the full acceptanc
 
 Run `npm --prefix web run format:check` before committing. The repository uses its tracked `.githooks/pre-commit` privacy hook rather than a Lefthook configuration.
 
-Run `node web/navigation-checks.mjs` with `PREVIEW_URL` set to verify frame-by-frame contextual navigation. It captures transition videos and checks that surrounding landmarks survive early inward motion and that the destination remains visible. This complements endpoint and settled-camera assertions.
+Run `node web/flight-checks.mjs` with `PREVIEW_URL` set to capture transition videos and verify actual rendered camera continuity, persistent scene transforms, complete structural opacity and destination presence throughout hierarchical navigation. Run `node web/navigation-checks.mjs` for seek, Reset and context-restore cancellation during flight, plus orbit ownership after arrival. Endpoint screenshots complement these motion checks; they cannot establish continuity on their own.
