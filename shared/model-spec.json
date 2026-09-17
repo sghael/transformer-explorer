@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "model_name": "Mixtral 8x7B educational preset",
+  "architecture": {
+    "num_layers": 32,
+    "hidden_size": 4096,
+    "intermediate_size": 14336,
+    "attention_heads": 32,
+    "kv_heads": 8,
+    "head_dim": 128,
+    "experts": 8,
+    "experts_per_token": 2,
+    "vocab_size": 32000
+  },
+  "visualization": {
+    "layer_index_base": 0,
+    "ui_layer_number_base": 1,
+    "max_expanded_layers": 1,
+    "max_expanded_experts": 1,
+    "example_sequence_length": 8,
+    "lod_levels": [
+      0,
+      1,
+      2
+    ],
+    "illustrative_values": true,
+    "target_tour_seconds": 75
+  },
+  "sources": [
+    "https://huggingface.co/mistralai/Mixtral-8x7B-v0.1/blob/main/config.json",
+    "https://arxiv.org/abs/2401.04088"
+  ]
+}

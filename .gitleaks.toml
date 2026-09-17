@@ -1,0 +1,29 @@
+title = "Project privacy checks"
+
+[[rules]]
+id = "personal-home-path"
+description = "Personal filesystem path"
+regex = '''/(?:home|Users)/[A-Za-z0-9_.-]+/'''
+
+[[rules]]
+id = "private-chat-link"
+description = "Private conversation link"
+regex = '''https?://(?:chatgpt\.com|chat\.openai\.com)/c/[A-Za-z0-9-]+'''
+
+[[rules]]
+id = "internal-address"
+description = "Private network address or internal hostname"
+regex = '''(?i)\b(?:10\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|192\.168\.[0-9]{1,3}\.[0-9]{1,3}|172\.(?:1[6-9]|2[0-9]|3[01])\.[0-9]{1,3}\.[0-9]{1,3}|100\.(?:6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}|[a-z0-9.-]+\.(?:internal|local|ts\.net))\b'''
+
+[[rules]]
+id = "personal-email"
+description = "Email address other than GitHub no-reply metadata"
+regex = '''[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'''
+[[rules.allowlists]]
+regexTarget = "match"
+regexes = ['''^[A-Za-z0-9+_.-]+@users\.noreply\.github\.com$''']
+
+[[rules]]
+id = "private-key-header"
+description = "Private key header"
+regex = '''-----BEGIN (?:[A-Z0-9]+ )?PRIVATE KEY-----'''

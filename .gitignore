@@ -1,0 +1,45 @@
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# JavaScript/build output (keep lockfiles)
+node_modules/
+dist/
+coverage/
+.vite/
+*.tsbuildinfo
+*.log
+
+# Reproducible assets, Blender backups and renders
+*.blend
+*.blend[0-9]*
+*.blend@
+/build/
+/artifacts/
+/renders/
+/tmp/
+/web/public/models/*
+!/web/public/models/.gitkeep
+
+# Private documentation and local context
+/docs-private/
