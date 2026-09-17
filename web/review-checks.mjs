@@ -47,7 +47,46 @@ const save = () =>
     JSON.stringify(report, null, 2),
   );
 const button = (name) => page.getByRole("button", { name, exact: true });
-const settle = () => page.waitForTimeout(1100);
+const settle = async (target = page) => {
+  // Wait for the scene's navigation contract, then require the live camera to
+  // remain converged. This also covers restored poses and paused orbit damping.
+  await target.waitForFunction(
+    () => window.__explorerScene?.navigationPhase === "settled",
+    undefined,
+    { timeout: 8000 },
+  );
+  await target.evaluate(
+    () =>
+      new Promise((resolve, reject) => {
+        let frame;
+        let previous = null;
+        let stableSince = null;
+        const timeout = setTimeout(() => {
+          cancelAnimationFrame(frame);
+          reject(new Error("Camera did not converge after navigation settled"));
+        }, 8000);
+        const observe = (now) => {
+          const current = window.__explorerScene;
+          const pose = window.__explorer?.camera;
+          const coordinates = pose ? [...pose.position, ...pose.target] : null;
+          const stable =
+            current?.navigationPhase === "settled" &&
+            coordinates &&
+            previous &&
+            coordinates.every(
+              (value, axis) => Math.abs(value - previous[axis]) < 0.0001,
+            );
+          stableSince = stable ? (stableSince ?? now) : null;
+          previous = coordinates;
+          if (stableSince !== null && now - stableSince >= 180) {
+            clearTimeout(timeout);
+            resolve();
+          } else frame = requestAnimationFrame(observe);
+        };
+        frame = requestAnimationFrame(observe);
+      }),
+  );
+};
 const view = async (name) => {
   await button(name).click();
   await settle();
