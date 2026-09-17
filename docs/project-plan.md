@@ -2,7 +2,7 @@
 
 Status: the five-milestone implementation and subsequent human-directed refinements are recorded in `progress.md`. The acceptance criteria below remain the project checklist.
 
-Current navigation requirement, updated through human steering: keep the computation graph present and fixed while the camera flies into nested detail. References below to extraction, expansion and collapse describe entering or leaving that detail; they no longer require moving a layer into a separate focus area or fading between layouts. Stack spacing still changes actual layer and connection transforms. Neighboring groups and expert interiors remain present.
+Current navigation requirement, updated through human steering: keep the computation graph present and fixed while the camera flies into nested detail. References below to extraction, expansion and collapse describe entering or leaving that detail; they no longer require moving a layer into a separate focus area or fading between layouts. Stack spacing still changes actual layer and connection transforms. Neighboring groups and expert interiors remain in the persistent model; an explicit development context mode can mute or hide surrounding geometry. Sequential layers now run left to right along X, matching the computation inside each layer; depth separates parallel heads and experts.
 
 ## Outcome and scope
 

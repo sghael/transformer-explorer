@@ -7,6 +7,8 @@ from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+LAYOUT = json.loads((ROOT / "shared/layout.json").read_text())
+assert LAYOUT["schema_version"] == 1
 
 
 def close(actual, expected):
@@ -66,12 +68,17 @@ def validate(path):
     sentinel_mesh = gltf["meshes"][n("coordinate_sentinel")["mesh"]]
     accessor = gltf["accessors"][sentinel_mesh["primitives"][0]["attributes"]["POSITION"]]
     close([b-a for a,b in zip(accessor["min"], accessor["max"])], [.2,.4,.6])
+    pitch = LAYOUT["layer_pitch"]
+    layer_dimensions = LAYOUT["layer_dimensions"]
+    half_x = layer_dimensions[0]/2
+    first_x = -(spec["num_layers"]-1)/2*pitch
+    last_x = -first_x
     layers = [n(f"layer_{i}") for i in range(spec["num_layers"])]
     assert len({layer["mesh"] for layer in layers}) == 1, "Layer meshes should share data"
     for i, layer in enumerate(layers):
         assert layer["extras"]["layer"] == i
         assert parents[ids[f"layer_{i}"]] == ids["stack"]
-        close(world(ids[f"layer_{i}"]), [0,0,(i-15.5)*.32])
+        close(world(ids[f"layer_{i}"]), [first_x+i*pitch,0,0])
     assert len({n(f"expert_{i}")["mesh"] for i in range(spec["experts"])}) == 1
     def mesh_bounds(identifier):
         mesh = gltf["meshes"][n(identifier)["mesh"]]
@@ -88,7 +95,7 @@ def validate(path):
         offset = 20 + json_length + 8 + view.get("byteOffset", 0) + accessor.get("byteOffset", 0)
         return [struct.unpack_from(fmt, blob, offset + i*stride) for i in range(accessor["count"])]
 
-    for identifier, dimensions in [("layer_0", [4,.12,.22]), ("expert_0", [1.5,1,.6])]:
+    for identifier, dimensions in [("layer_0", layer_dimensions), ("expert_0", [1.5,1,.6])]:
         lower, upper = mesh_bounds(identifier)
         close([b-a for a,b in zip(lower, upper)], dimensions)
         assert n(identifier)["extras"]["geometry_profile"] == "skeletal_frame"
@@ -192,16 +199,26 @@ def validate(path):
             lower, upper = mesh_bounds(child)
             close([y-x for x,y in zip(lower,upper)], [value or thickness for value in delta])
 
+    def macro_face(identifier, side):
+        layout = LAYOUT["macro_nodes"][identifier]
+        return layout["x"] + side*layout["size"][0]/2
+    for identifier, layout in LAYOUT["macro_nodes"].items():
+        close(world(ids[identifier]), [layout["x"],0,0])
+        lower, upper = mesh_bounds(identifier)
+        close([b-a for a,b in zip(lower,upper)],layout["size"])
     graph = [
-        ("overview_input", [(-7.45,0,0),(-6,0,0)]),
-        ("overview_embed", [(-5,0,0),(-3,0,0),(-3,0,-5.07),(0,0,-5.07)]),
-        ("overview_final", [(0,0,5.07),(3,0,5.07),(3,0,0),(4.675,0,0)]),
-        ("overview_norm", [(4.925,0,0),(6.5,0,0)]),
-        ("overview_output", [(7.5,0,0),(9,0,0)]),
+        ("overview_input", [(macro_face("input",1),0,0),(macro_face("embedding",-1),0,0)]),
+        ("overview_embed", [(macro_face("embedding",1),0,0),(first_x-half_x,0,0)]),
+        ("overview_final", [(last_x+half_x,0,0),(macro_face("final_norm",-1),0,0)]),
+        ("overview_norm", [(macro_face("final_norm",1),0,0),(macro_face("lm_head",-1),0,0)]),
+        ("overview_output", [(macro_face("lm_head",1),0,0),(macro_face("output",-1),0,0)]),
     ]
     for identifier, points in graph:
+        assert points[0][0] < points[1][0]
+        assert all(point[1] == point[2] == 0 for point in points)
         check_graph_path(identifier, points)
-    feedback = [(10,0,0),(11,0,0),(11,0,6.8),(-9,0,6.8),(-9,0,0),(-8.55,0,0)]
+    feedback = [(macro_face("output",1),0,0),(17,0,0),(17,0,LAYOUT["feedback_z"]),
+                (-16,0,LAYOUT["feedback_z"]),(-16,0,0),(macro_face("input",-1),0,0)]
     check_graph_path("generation_feedback", feedback, thickness=.025)
 
     def face(identifier, axis, side):
@@ -216,8 +233,8 @@ def validate(path):
         (graph[0][1][0], face("input", 0, "max")),
         (graph[0][1][-1], face("embedding", 0, "min")),
         (graph[1][1][0], face("embedding", 0, "max")),
-        (graph[1][1][-1], face("layer_0", 2, "min")),
-        (graph[2][1][0], face(f"layer_{spec['num_layers']-1}", 2, "max")),
+        (graph[1][1][-1], face("layer_0", 0, "min")),
+        (graph[2][1][0], face(f"layer_{spec['num_layers']-1}", 0, "max")),
         (graph[2][1][-1], face("final_norm", 0, "min")),
         (graph[3][1][0], face("final_norm", 0, "max")),
         (graph[3][1][-1], face("lm_head", 0, "min")),
@@ -231,17 +248,32 @@ def validate(path):
     for i in range(spec["num_layers"]):
         summary = f"layer_summary_{i}"
         assert n(summary)["extras"]["component"] == "collapsed_layer_flow"
-        check_graph_path(summary, [(0,0,-.11),(0,0,.11)], thickness=.0015, parent=f"layer_{i}")
+        check_graph_path(summary, [(-half_x,0,0),(half_x,0,0)], thickness=.0015, parent=f"layer_{i}")
         if i < spec["num_layers"]-1:
             gap = f"stack_gap_{i}"
             assert n(gap)["extras"]["component"] == "layer_link"
-            check_graph_path(gap, [face(f"layer_{i}", 2, "max"), face(f"layer_{i+1}", 2, "min")], thickness=.0015, parent="stack")
+            check_graph_path(gap, [face(f"layer_{i}", 0, "max"), face(f"layer_{i+1}", 0, "min")], thickness=.0015, parent="stack")
     for identifier in ["norm1", "norm2", "final_norm"]:
-        assert n(identifier)["extras"]["geometry_profile"] == "rounded_operation"
+        assert n(identifier)["extras"]["geometry_profile"] == "normalization_disk"
+        dimensions = LAYOUT["macro_nodes"]["final_norm"]["size"] if identifier == "final_norm" else [.22,.5,.5]
+        lower, upper = mesh_bounds(identifier)
+        close([b-a for a,b in zip(lower,upper)], dimensions)
+        primitive = gltf["meshes"][n(identifier)["mesh"]]["primitives"][0]
+        positions = values(primitive["attributes"]["POSITION"])
+        indices = [value[0] for value in values(primitive["indices"])]
+        # Solid capped disks have circular side vertices and center-filled end faces.
+        for x,y,z in positions:
+            assert math.isclose(abs(x),dimensions[0]/2,abs_tol=1e-6)
+            radius = math.hypot(y,z)
+            assert radius < 1e-6 or math.isclose(radius,dimensions[1]/2,abs_tol=1e-6)
+        for sign in [-1,1]:
+            assert any(abs(positions[index][0]-sign*dimensions[0]/2)<1e-6 and
+                       math.hypot(*positions[index][1:])<1e-6 for index in indices)
+
     assert "stack_sequence" not in ids and "overview_flow" not in ids
-    check_graph_path("focus_input", [(0,0,-5),(-9,0,-5),(-9,0,0)], .025, "focus")
-    check_graph_path("focus_output", [(11,0,0),(11,0,5),(0,0,5)], .025, "focus")
-    stages = [(-9,-8.11),(-7.89,-7),(-2.675,-2.24),(-1.76,-.11),(.11,1.75),(8.25,9.76),(10.24,11)]
+    check_graph_path("focus_input", [(-11,0,0),(-9,0,0)], .025, "focus")
+    check_graph_path("focus_output", [(10.24,0,0),(11,0,0)], .025, "focus")
+    stages = [(-9,-8.11),(-7.89,-7),(-2.675,-2.24),(-1.76,-.11),(.11,1.75),(8.25,9.76)]
     assert len(n("residual_stream")["children"]) == len(stages)
     for i, (start,end) in enumerate(stages):
         check_graph_path(f"residual_stage_{i}", [(start,0,0),(end,0,0)], .025, "residual_stream")
@@ -345,6 +377,19 @@ def validate(path):
         assert extras["post_rope"] is True and extras["source_id"] == f"rope_k_{g}"
         assert extras["target_id"] == f"cache_k_{g}"
         close([a+b for a,b in zip((.08,1.9,.48),group_position)],face(f"rope_k_{g}",0,"max"))
+    assert "residual_stage_6" not in ids, "Output connection must not be duplicated"
+    close([11*LAYOUT["focus_scale"]], [half_x])
+    for identifier,index in ids.items():
+        ancestor = index
+        while ancestor in parents and ancestor != ids["focus"]:
+            ancestor = parents[ancestor]
+        if ancestor != ids["focus"] or "mesh" not in nodes[index]:
+            continue
+        lower,upper = mesh_bounds(identifier)
+        position = world(index)
+        for axis in range(3):
+            assert (lower[axis]+position[axis])*LAYOUT["focus_scale"] >= -layer_dimensions[axis]/2-1e-5, identifier
+            assert (upper[axis]+position[axis])*LAYOUT["focus_scale"] <= layer_dimensions[axis]/2+1e-5, identifier
     anchors = {}
     for identifier, index in ids.items():
         node = nodes[index]
@@ -353,6 +398,11 @@ def validate(path):
             anchors[node["name"]] = {"position": world(index),
                                      "target": [extras[f"target_{axis}"] for axis in "xyz"]}
     assert len(anchors) == 10
+    for name,position,target in [("CAM_OVERVIEW",[0,12,25],[0,0,0]),
+                                  ("CAM_INPUT",[-13.5,3,6],[-13.5,0,0]),
+                                  ("CAM_LM_HEAD",[14,3,6],[14,0,0])]:
+        close(anchors[name]["position"], position)
+        close(anchors[name]["target"], target)
     scene_report_path = ROOT / "artifacts/scene-report.json"
     if scene_report_path.exists():
         scene_report = json.loads(scene_report_path.read_text())

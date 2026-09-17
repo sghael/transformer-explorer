@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import type { View } from "./data";
+import { layout, halfSpan } from "./layout";
 export type CameraPose = { position: number[]; target: number[] };
-export const FOCUS_SCALE = 0.022;
+export const FOCUS_SCALE = layout.focus_scale;
 export const ease = (t: number) => {
   const x = THREE.MathUtils.clamp(t, 0, 1);
   return x * x * x * (10 + x * (-15 + 6 * x));
@@ -10,7 +11,7 @@ export function layerOrigin(
   layer: number,
   spacing: number,
 ): [number, number, number] {
-  return [0, 0, (layer - 15.5) * 0.32 * spacing];
+  return [(layer * layout.layer_pitch - halfSpan) * spacing, 0, 0];
 }
 export function inLayer(
   point: number[],

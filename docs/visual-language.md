@@ -4,14 +4,12 @@ Original procedural schematics; no external artwork is used. Space represents co
 
 ## Overview
 
-An oblique camera looks across 32 horizontally oriented slices separated in depth. Input and embedding sit to the left; final normalization and output sit to the right. A labeled path connects the stack in sequential order. A spacing control changes the depth separation. Selected slices receive a bright edge and a numbered persistent HTML locator.
+All forward computation runs left to right, including the sequence of 32 individually selectable layers. Each layer is an open container with a left input and right output. Spacing spreads the sequence along X and moves its input/output stages outward. Depth separates parallel heads and experts inside each layer; it no longer turns the layer sequence away from the rest of the graph.
 
 ```text
-                    Layer 32 / far depth
-                  ╱──────────╱
-                 ╱──────────╱   → Final norm → Output
-Input → Embed → ╱──────────╱
-              Layer 1 / near depth
+Token IDs → Embedding → [L1] → [L2] → … → [L32] → RMSNorm → LM head → Next ID
+    ↑                                                                  │
+    └────────────────────── next decode step ───────────────────────────┘
 ```
 
 ## Inside a layer
@@ -40,7 +38,7 @@ Visual acceptance requires the actual loaded GLB at two oblique angles, expanded
 
 ## Deeper inspection
 
-Solid operation nodes have modest rounded edges; RMSNorm and RoPE use this same operation form. Open outlines are reserved for subgraph containers such as layers and experts. Learned matrices and runtime arrays use panels whose labels identify their different roles. These are explanatory shapes, not physical components. Each view states the mathematical dimensions separately from its schematic mesh size.
+Solid operation nodes have modest rounded edges; RoPE uses the rounded operation form; RMSNorm uses a compact solid circular disk aligned with the flow, distinguishing normalization from a learned array. Open outlines are reserved for subgraph containers such as layers and experts. Learned matrices and runtime arrays use panels whose labels identify their different roles. These are explanatory shapes, not physical components. Each view states the mathematical dimensions separately from its schematic mesh size.
 
 A moving point represents a token ID, a bundle represents sampled channels of a vector, and a grid represents sampled positions/channels of a tensor. The explicit flow controls keep the motion optional and inspectable. RMSNorm provides the first complete operation-to-scalar path: select a channel, inspect its squared input and the shared denominator, then apply its learned scale.
 
@@ -54,4 +52,8 @@ The gray graph joins actual input/output ports. Expert routing and residual bypa
 
 The numerical panels apply Tufte's integration of graphics with words and numbers: selected attention weights and all eight router probabilities have directly adjacent values and common-scale bars. Masked future keys remain explicitly marked, and routing probability is separate from the selected experts' normalized combination weights. Quiet table rules and direct labels reduce decoration while preserving the data. Parent context remains available around local detail; arbitrary orbit may still cause occlusion.
 
-These are project applications of [Tufte's sparkline principles](https://www.edwardtufte.com/notebook/sparkline-theory-and-practice-edward-tufte/) and [his use of surrounding evidence for comparison](https://www.edwardtufte.com/notebook/making-better-inferences-from-statistical-graphics-edward-tufte/), not claims that he endorsed this exhibit. The depth axes encode sequential layers and parallel alternatives; they do not encode probability or parameter count. Exact numerical reading remains available in the HTML panels and matrix view.
+These are project applications of [Tufte's sparkline principles](https://www.edwardtufte.com/notebook/sparkline-theory-and-practice-edward-tufte/) and [his use of surrounding evidence for comparison](https://www.edwardtufte.com/notebook/making-better-inferences-from-statistical-graphics-edward-tufte/), not claims that he endorsed this exhibit. X encodes sequential computation at both model and layer scales; depth encodes parallel alternatives; they do not encode probability or parameter count. Exact numerical reading remains available in the HTML panels and matrix view.
+
+## Surroundings experiment
+
+The development preview offers Full context, Muted context, and Hide surroundings. Muting darkens outside geometry heavily and suppresses its labels near the selected module; it leaves material opacity at one. Hiding is an explicit cutaway of the same scene. The selected computation and camera pose do not move when the control changes. The overview retains the complete graph in every mode.

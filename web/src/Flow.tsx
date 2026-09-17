@@ -1,4 +1,5 @@
 import { Line } from "@react-three/drei";
+import { macroX, macroPaths, stackEnds } from "./layout";
 import type { View } from "./data";
 import { pointAlongPath, routerPaths, type Point } from "./spatial";
 
@@ -109,49 +110,30 @@ export default function Flow({
   const z = (group - 3.5) * 1.2;
   let tracks: React.ReactNode;
   if (["overview", "input", "output"].includes(view)) {
-    const first = -4.96 * spacing - 0.11,
-      last = 4.96 * spacing + 0.11;
+    const [first, last] = stackEnds(spacing);
+    const center = (id: "input" | "embedding" | "output"): Point => [
+      macroX(id, spacing),
+      0,
+      0,
+    ];
     const stages: { end: number; points: Point[]; kind: Kind }[] = [
       {
         end: 0.12,
-        points: [
-          [-8, 0, 0],
-          [-5.5, 0, 0],
-        ],
+        points: [center("input"), center("embedding")],
         kind: "token",
       },
       {
         end: 0.65,
-        points: [
-          [-5.5, 0, 0],
-          [-3, 0, 0],
-          [-3, 0, first],
-          [0, 0, first],
-          [0, 0, last],
-        ],
+        points: [center("embedding"), [first, 0, 0], [last, 0, 0]],
         kind: phase < 0.28 ? "tensor" : "vector",
       },
-      {
-        end: 0.82,
-        points: [
-          [0, 0, last],
-          [3, 0, last],
-          [3, 0, 0],
-          [4.8, 0, 0],
-          [7, 0, 0],
-          [9.5, 0, 0],
-        ],
-        kind: "vector",
-      },
+      { end: 0.82, points: [[last, 0, 0], center("output")], kind: "vector" },
       {
         end: 1,
         points: [
-          [9.5, 0, 0],
-          [11, 0, 0],
-          [11, 0, last + 1.73],
-          [-9, 0, last + 1.73],
-          [-9, 0, 0],
-          [-8, 0, 0],
+          center("output"),
+          ...macroPaths(spacing).generation_feedback,
+          center("input"),
         ],
         kind: "token",
       },

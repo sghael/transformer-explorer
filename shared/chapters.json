@@ -39,7 +39,7 @@
         "seed": 1729,
         "cycles": 1
       },
-      "caption": "Follow tokens through 32 decoder layers to scores for the next token. Depth separates sequential layers.",
+      "caption": "Follow tokens left to right through 32 decoder layers to scores for the next token. Depth separates parallel heads and experts inside a layer.",
       "explanationKey": "overview",
       "misconception": "The stack shows computation, not physical parameter placement.",
       "acceptance": "All 32 slices and a continuous input-to-output path remain visible."
@@ -52,7 +52,7 @@
       "duration": 7,
       "view": "input",
       "cameraAnchor": "CAM_INPUT",
-      "cameraTarget": [-10, 0, 0],
+      "cameraTarget": [-13.5, 0, 0],
       "detailLevel": 1,
       "selection": {
         "layer": 11,
@@ -303,7 +303,7 @@
       "duration": 8,
       "view": "output",
       "cameraAnchor": "CAM_LM_HEAD",
-      "cameraTarget": [12, 0, 0],
+      "cameraTarget": [14, 0, 0],
       "detailLevel": 1,
       "selection": {
         "layer": 11,

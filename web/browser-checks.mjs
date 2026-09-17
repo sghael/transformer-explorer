@@ -1,8 +1,11 @@
 import { chromium, expect } from "@playwright/test";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
+const layout = JSON.parse(
+  await readFile(new URL("../shared/layout.json", import.meta.url), "utf8"),
+);
 const preview = process.env.PREVIEW_URL;
 if (!preview)
   throw new Error(
@@ -262,6 +265,7 @@ const settle = async (target = page) => {
 };
 const button = (name) => page.getByRole("button", { name, exact: true });
 const view = async (name) => {
+  await page.getByLabel("Surroundings", { exact: true }).selectOption("full");
   await button(name).click();
   await settle();
 };
@@ -306,6 +310,132 @@ try {
         layerCount: true,
       });
       return ready.checks;
+    },
+  );
+  await check(
+    "Surroundings modes preserve geometry, isolate the focus, and round-trip view context",
+    async () => {
+      const control = page.getByLabel("Surroundings", { exact: true });
+      await expect(control).toHaveValue("muted");
+      expect((await snapshot(page)).contextMode).toBe("muted");
+      const inspect = () =>
+        page.evaluate(() => {
+          const { scene } = window.__explorerInspect();
+          const ids = new Set([
+            "norm1",
+            "layer_11",
+            "embedding",
+            "q_8",
+            "score_2",
+            "score_3",
+          ]);
+          const result = {};
+          scene.traverse((node) => {
+            const id = node.userData.id || node.name;
+            if (!ids.has(id)) return;
+            let visible = true;
+            for (let parent = node; parent; parent = parent.parent)
+              visible &&= parent.visible;
+            const material = Array.isArray(node.material)
+              ? node.material[0]
+              : node.material;
+            result[id] = {
+              visible,
+              color: material?.color?.toArray() ?? null,
+              opacity: material?.opacity ?? 1,
+              world: [...node.matrixWorld.elements],
+            };
+          });
+          return result;
+        });
+      const mode = async (value) => {
+        await control.selectOption(value);
+        await expect
+          .poll(() => page.evaluate(() => window.__explorerScene.contextMode))
+          .toBe(value);
+      };
+      const brightness = (node) =>
+        node.color.reduce((sum, value) => sum + value, 0);
+      const evidence = [];
+      for (const [name, focused, outside] of [
+        [
+          "Inside a layer",
+          ["norm1", "q_8", "score_2"],
+          ["layer_11", "embedding"],
+        ],
+        ["Attention group", ["q_8", "score_2"], ["score_3", "norm1"]],
+      ]) {
+        await view(name);
+        await mode("full");
+        const full = await inspect();
+        for (const id of [...focused, ...outside]) {
+          expect(full[id], `${id} is inspectable`).toBeTruthy();
+          expect(full[id].visible).toBe(true);
+          expect(full[id].opacity).toBe(1);
+        }
+        await mode("muted");
+        await expect
+          .poll(async () => {
+            const current = await inspect();
+            return outside.every(
+              (id) => brightness(current[id]) < brightness(full[id]) * 0.8,
+            );
+          })
+          .toBe(true);
+        const muted = await inspect();
+        for (const id of [...focused, ...outside]) {
+          expect(muted[id].visible).toBe(true);
+          expect(muted[id].opacity).toBe(1);
+          expect(muted[id].world).toEqual(full[id].world);
+        }
+        for (const id of focused)
+          expect(muted[id].color).toEqual(full[id].color);
+        await mode("isolated");
+        await expect
+          .poll(async () => {
+            const current = await inspect();
+            return outside.every((id) => !current[id].visible);
+          })
+          .toBe(true);
+        const isolated = await inspect();
+        for (const id of focused) expect(isolated[id].visible).toBe(true);
+        for (const id of [...focused, ...outside])
+          expect(isolated[id].world).toEqual(full[id].world);
+        await capture(
+          `surroundings-${name === "Inside a layer" ? "layer" : "attention"}-isolated`,
+        );
+        await mode("full");
+        await expect.poll(inspect).toEqual(full);
+        evidence.push({ view: name, full, muted, isolated });
+      }
+      await mode("isolated");
+      const details = page.locator("details.review");
+      if ((await details.getAttribute("open")) === null)
+        await page
+          .getByText("Development view context", { exact: true })
+          .click();
+      await button("Copy current view").click();
+      const field = page.getByRole("textbox", { name: "View context" });
+      const saved = JSON.parse(await field.inputValue());
+      expect(saved.contextMode).toBe("isolated");
+      await mode("full");
+      await field.fill(JSON.stringify(saved));
+      await button("Restore view").click();
+      await expect(control).toHaveValue("isolated");
+      const legacy = { ...saved };
+      delete legacy.contextMode;
+      await field.fill(JSON.stringify(legacy));
+      await button("Restore view").click();
+      await expect(control).toHaveValue("muted");
+      await mode("full");
+      await field.fill(JSON.stringify({ ...saved, contextMode: "invalid" }));
+      await button("Restore view").click();
+      await expect(field).toHaveValue(/Invalid surroundings mode/);
+      await expect(control).toHaveValue("full");
+      await button("Reset").click();
+      await expect(control).toHaveValue("muted");
+      await mode("full");
+      return evidence;
     },
   );
   await check("All 32 layers select through the layer locator", async () => {
@@ -364,14 +494,29 @@ try {
     expect(before, "Scene transform inspection must be exposed").toBeTruthy();
     for (let layer = 0; layer < 32; layer++) {
       const id = `layer_${layer}`;
-      expect(after.nodes[id].world[2]).toBeCloseTo(
-        before.nodes[id].world[2] * 2.6,
+      expect(before.nodes[id].world[0]).toBeCloseTo(
+        (layer - 15.5) * layout.layer_pitch,
         6,
       );
-      expect(after.nodes[id].world.slice(0, 2)).toEqual(
-        before.nodes[id].world.slice(0, 2),
+      expect(after.nodes[id].world[0]).toBeCloseTo(
+        (layer - 15.5) * layout.layer_pitch * 2.6,
+        6,
       );
+      expect(after.nodes[id].world.slice(1)).toEqual([0, 0]);
+      expect(before.nodes[id].world.slice(1)).toEqual([0, 0]);
     }
+    for (const id of ["input", "embedding"])
+      expect(after.nodes[id].world[0]).toBeLessThan(before.nodes[id].world[0]);
+    for (const id of ["final_norm", "lm_head", "output"])
+      expect(after.nodes[id].world[0]).toBeGreaterThan(
+        before.nodes[id].world[0],
+      );
+    expect(after.nodes.embedding.world[0]).toBeLessThan(
+      after.nodes.layer_0.world[0],
+    );
+    expect(after.nodes.final_norm.world[0]).toBeGreaterThan(
+      after.nodes.layer_31.world[0],
+    );
     expect(after.nodes.stack.world).toEqual(before.nodes.stack.world);
     expect(after.nodes.stack.scale).toEqual(before.nodes.stack.scale);
     await capture("overview-spaced");
@@ -513,7 +658,10 @@ try {
     "Context copy and restore return selection, timeline and camera",
     async () => {
       await view("Attention group");
-      await page.getByText("Development view context", { exact: true }).click();
+      if ((await page.locator("details.review").getAttribute("open")) === null)
+        await page
+          .getByText("Development view context", { exact: true })
+          .click();
       await button("Copy current view").click();
       const saved = await page
         .getByRole("textbox", { name: "View context" })
@@ -575,11 +723,37 @@ try {
   await check(
     "Expert mesh picking and actual moving-camera transitions",
     async () => {
+      await seek(66.1);
       await view("Expert routing");
       const before = await snapshot(page);
       const point = await surfacePoint(`expert_${before.state.expert}`);
+      const hitElement = await page.evaluate(([x, y]) => {
+        const element = document.elementFromPoint(x, y);
+        return {
+          tag: element?.tagName,
+          text: element?.textContent?.slice(0, 100),
+          rect: document
+            .querySelector("canvas")
+            .getBoundingClientRect()
+            .toJSON(),
+        };
+      }, point);
       await page.mouse.click(point[0], point[1]);
+      await expect
+        .poll(async () => (await snapshot(page)).state.view, {
+          message: JSON.stringify({
+            point,
+            hitElement,
+            lastPick: await page.evaluate(
+              () => window.__explorerScene.lastPick,
+            ),
+          }),
+        })
+        .toBe("expert");
       await settle();
+      await expect
+        .poll(() => page.evaluate(() => window.__explorerScene.lastPick?.id))
+        .toBe(`expert_${before.state.expert}`);
       expect((await snapshot(page)).state.view).toBe("expert");
       expect((await snapshot(page)).state.expert).toBe(before.state.expert);
       await page.getByLabel("Speed", { exact: true }).selectOption("1");
