@@ -2,13 +2,13 @@
 
 An interactive 3D exhibit explaining how a decoder-only Transformer processes tokens and generates the next token. Visitors can explore the live scene or play a guided camera tour, pause it, and inspect the same objects.
 
-**Status: project seed.** This repository contains the design brief, original implementation prompt, initial model specification, and starter directories. The Blender generator and web viewer have not been implemented. There is no runnable website or generated model yet.
+**Status: project seed.** This repository contains the design brief, implementation plan, current agent prompt, initial model specification, and starter directories. The Blender generator and web viewer have not been implemented. There is no runnable website or generated model yet.
 
 ## Start here
 
-Read [AGENT_PROMPT.txt](AGENT_PROMPT.txt) for the complete original agent prompt for the project. It is preserved verbatim, including its proposed folder name and future implementation instructions. This repository is named `transformer-explorer`; it is already initialized, so continue here rather than initializing a nested project.
+Read [AGENT_PROMPT.txt](AGENT_PROMPT.txt) for the current implementation assignment and [the project plan](docs/project-plan.md) for milestone acceptance criteria. [AGENTS.md](AGENTS.md) routes agents to the product requirements and [reasoning/delegation workflow](docs/agent-workflow.md). The [initial storyboard](docs/storyboard.md) maps the tour to learning objectives and visual checks.
 
-The first implementation task is to inspect the installed development tools, then write `docs/architecture.md` and `docs/storyboard.md`. Build one complete Blender-to-browser path before adding visual detail.
+The full implementation goal covers all five milestones, with an early preview after design contracts and one complete Blender-to-browser path. This repository is already initialized. The [original prompt](docs/archive/original-agent-prompt.txt) is preserved verbatim as historical background.
 
 ## What the exhibit should teach
 
@@ -59,9 +59,13 @@ Semantic zoom changes which concepts are visible as the visitor moves closer:
 | Layer | Residual stream, two normalization gates, attention, MoE, additions |
 | Component | Q/K/V, head groups, RoPE, cache, router scores, expert matrices, equations |
 
+The [spatial deliverable contract](docs/project-plan.md#spatial-deliverable-contract) defines the required views, interactions, and evidence.
+
 Use smooth transitions and stable thresholds to avoid flickering between levels. Selecting a component should also offer an explicit way to reveal details. Reusing the detailed assembly must preserve the selected layer's identity and cache context.
 
-Use a dark neutral environment, restrained emissive highlights, simple matrix slabs, and a clear flow direction. Shape, labels, and placement must convey meaning alongside color. Avoid rendering individual parameters or thousands of matrix cells.
+Use a dark neutral environment, restrained emissive highlights, simple matrix slabs, and a clear flow direction. Shape, labels, and placement must convey meaning alongside color. Use thin matrix surfaces with dimension labels and sampled heatmaps. Separate related surfaces in depth to reveal repetition and shared connections; label what each axis means. Avoid rendering individual parameters or thousands of matrix cells.
+
+The default view is an oblique, genuinely three-dimensional stack with visible layer spacing. Visitors can spread the stack, pull out one layer, inspect its head groups or expert bank, and return to the same location. A face-on matrix view and HTML detail panel provide readable values without losing the selected layer, group, or token. Keep a compact stack locator visible during close inspection. A perspective-styled flat diagram alone does not meet the spatial contract.
 
 ## Attention, GQA, RoPE, and caching
 
@@ -116,7 +120,7 @@ Names such as `MODEL_ROOT`, `LAYER_STACK`, `FOCUS_LAYER`, `ATTENTION_ROOT`, `KV_
 
 Use Vite, React, TypeScript, Three.js, `@react-three/fiber`, and `@react-three/drei`. Load the GLB, interpret node metadata, and render labels and educational panels in HTML for readable, accessible text.
 
-**Explore mode:** orbit, pan, zoom, hover, click-to-focus, layer selection, component explanations, reset view, and keyboard alternatives for essential actions.
+**Explore mode:** orbit, pan, zoom, hover, click-to-focus, layer selection, stack spacing, component explanations, and explicit Overview / Layer / Matrix views. Preserve the selected layer, head group, and token across views. Provide reset, back-to-layer, a persistent location indicator, and keyboard alternatives for essential actions. Camera travel helps orientation but is not required to reach a view.
 
 **Guided Tour:** play/pause, restart, previous/next chapter, scrubber, speed, and return to Explore. Paused camera movement should remain under the visitor's control. Resume should transition smoothly to the tour camera. Respect reduced-motion settings and provide readable captions.
 
@@ -126,11 +130,27 @@ The full storyboard follows overview → tokens → embeddings → stack → exp
 
 The first polished tour should last roughly 60–90 seconds, grouping related chapters where needed.
 
+## Development preview and feedback
+
+During implementation, keep a preview of the latest successful build reachable from a laptop browser on the same home LAN as the build host
+and share visual checkpoints in the agent conversation. A development-only review
+control identifies the build and copies its camera/selection/timeline context, so
+feedback can refer to the exact view. It does not send messages or run agent
+commands. Human feedback steers autonomous work through the existing chat;
+explicitly pausing the agent is separate from pausing the tour. Follow the
+[steering protocol](docs/agent-workflow.md#human-steering-during-autonomous-work).
+Bind the preview server to `0.0.0.0`, publish a verified LAN address with its
+actual startup port, and verify asset loading from the laptop when possible.
+Keep actual addresses and machine details in ignored private context. These
+controls are planned for milestone 2 and are not part of the public exhibit
+interface by default.
+
 ## Shared data and repository layout
 
 ```text
 README.md
-AGENT_PROMPT.txt          # Complete original prompt, preserved verbatim
+AGENT_PROMPT.txt          # Current implementation assignment
+AGENTS.md                # Agent entrypoint and project workflow
 .gitignore
 shared/
   model-spec.json        # Initial architectural and visualization preset
@@ -139,7 +159,7 @@ web/
   src/                   # Future React/TypeScript viewer
   public/models/         # Generated web assets
 scripts/                 # Future build and validation commands
-docs/                    # Future architecture, visual language, storyboard
+docs/                    # Plan, workflow, storyboard, original prompt archive
 ```
 
 Tracked .gitkeep files preserve empty starter directories. Future files named in the prompt are a plan, not implemented modules.
@@ -159,21 +179,15 @@ These are proposed acceptance targets, not measured results:
 - Profile triangles, draw calls, texture memory, loading time, and frame time before adding compression.
 - Keep labels readable and collision-aware; support keyboard navigation and reduced motion.
 - Retain semantic metadata and object selection through optimization.
+- Provide preset viewpoints and a face-on reading mode on narrow screens. Reduced motion changes transitions, not the available concepts or selectable layers.
 
-Document the measurement procedure and results in `docs/`. Check performance on the client browser, not only on Neural's GPU.
+Document the measurement procedure and results in `docs/`. Check performance on the client browser, not only on the build machine.
 
 ## Phased milestones
 
-| Phase | Deliverable | Completion check |
-| --- | --- | --- |
-| 0: Seed | README, full prompt, spec, folders, initial commit | Files tracked; clean Git status |
-| 1: Design | Tool inventory, architecture, metadata/schema contract, storyboard | Scene hierarchy and tour state model documented |
-| 2: End-to-end slice | Procedural input/stack/focus layer/attention/router/8 experts/output; GLB; basic viewer | Rebuild from scratch; load, orbit, select, expand, play short tour |
-| 3: Computation | GQA, RoPE, causal mask, cache, top-2 routing, weighted merge, token flow | Educational invariants and illustrative labeling verified |
-| 4: Presentation | Semantic zoom, full tour, timeline seeking, panels, keyboard controls | 60–90 second tour, pause/resume/seek and Explore transitions work |
-| 5: Delivery | Performance pass, one build command, static deployment documentation | Production build and browser validation pass; measured budgets recorded |
+The [project plan](docs/project-plan.md) defines five milestones: design contracts, an end-to-end slice, computational explanation, teaching and interaction, and delivery. Each has explicit acceptance checks. The full assignment covers all five; the first two are the early preview checkpoint.
 
-Commit logical milestones. Implement a single build command that regenerates assets and builds the site without opening Blender manually. Pin dependency versions and record the tested Blender version when implementation begins.
+Use the [agent workflow](docs/agent-workflow.md) to select reasoning effort and delegate bounded work. Pin dependency versions and record the tested Blender version when implementation begins.
 
 ## Validation for implementation
 
@@ -184,6 +198,11 @@ Verify cache creation during prefill and reuse during decode, deterministic resu
 ## Artifact policy and references
 
 Ignore generated Blender scenes, autosaves, caches, rendered frames, dependencies, and build output. Source and lockfiles belong in Git. Generated models in `web/public/models/` are ignored initially; a later deployment decision can intentionally track a modest GLB. Introduce Git LFS only if size and workflow justify it.
+
+Visual and interaction references:
+
+- The supplied Welch Labs *Illustrated Guide to AI* page suggests repeated matrix sheets, grouping, and explicit shared connections. Use it as conceptual inspiration; create original geometry and graphics rather than publishing the supplied scan. Its example architecture and counts are not this preset.
+- [Transformer Explainer](https://poloclub.github.io/transformer-explainer/) connects token selection, attention inspection, numerical explanations, and output probabilities. Adapt that connected inspection to our spatial scene. Its live GPT-2 demonstration is distinct from this project's illustrative Mixtral data; live inference remains outside the initial scope.
 
 Primary references:
 
