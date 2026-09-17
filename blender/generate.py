@@ -9,6 +9,7 @@ from collections import Counter
 from pathlib import Path
 
 import bpy
+import bmesh
 from mathutils import Vector
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,16 +52,51 @@ def node(identifier, component, parent=None, pos=(0, 0, 0), lod=1,
     return obj
 
 
+def mesh_shape(size, profile):
+    """Keep the specified outer bounds while distinguishing operations from sheets."""
+    vertices, faces = [], []
+
+    def cuboid(dimensions, center=(0, 0, 0)):
+        x, y, z = [v / 2 for v in dimensions]
+        offset = len(vertices)
+        for point in [(-x,-y,-z), (x,-y,-z), (x,y,-z), (-x,y,-z),
+                      (-x,-y,z), (x,-y,z), (x,y,z), (-x,y,z)]:
+            vertices.append(convert(tuple(a+b for a,b in zip(point, center))))
+        for face in [(0,3,2,1), (4,5,6,7), (0,1,5,4), (1,2,6,5),
+                     (2,3,7,6), (3,0,4,7)]:
+            faces.append(tuple(i + offset for i in face))
+
+    if profile == "normalization_frame":
+        x, y, z = size
+        bar = min(y, z) * .11
+        for sign in [-1, 1]:
+            cuboid((x, bar, z), (0, sign * (y-bar)/2, 0))
+            cuboid((x, y-2*bar, bar), (0, 0, sign * (z-bar)/2))
+        radius = min(x, bar) * .16
+    else:
+        cuboid(size)
+        radius = min(.12, min(size) * .16)
+    mesh = bpy.data.meshes.new(f"{profile}_{len(MESHES)}")
+    mesh.from_pydata(vertices, [], faces)
+    if profile != "slab":
+        topology = bmesh.new()
+        topology.from_mesh(mesh)
+        bmesh.ops.bevel(topology, geom=list(topology.edges), offset=radius,
+                        segments=3, affect="EDGES", clamp_overlap=True)
+        topology.to_mesh(mesh)
+        topology.free()
+    mesh.update()
+    return mesh
+
+
 def box(identifier, component, parent, pos, size, color="slate", **extras):
-    key = (tuple(size), color)
+    operations = {"expert", "moe_router", "weighted_merge", "input", "output",
+                  "silu", "elementwise_multiply"}
+    profile = ("normalization_frame" if component == "rms_norm" else
+               "rounded_operation" if component in operations else "slab")
+    key = (tuple(size), color, profile)
     if key not in MESHES:
-        x, y, z = [v / 2 for v in size]
-        vertices = [convert(v) for v in [(-x,-y,-z), (x,-y,-z), (x,y,-z),
-                    (-x,y,-z), (-x,-y,z), (x,-y,z), (x,y,z), (-x,y,z)]]
-        faces = [(0,3,2,1), (4,5,6,7), (0,1,5,4), (1,2,6,5),
-                 (2,3,7,6), (3,0,4,7)]
-        mesh = bpy.data.meshes.new(f"slab_{len(MESHES)}")
-        mesh.from_pydata(vertices, [], faces)
+        mesh = mesh_shape(size, profile)
         mesh.materials.append(MATERIALS[color])
         MESHES[key] = mesh
     return node(identifier, component, parent, pos, mesh=MESHES[key], **extras)
@@ -89,6 +125,8 @@ def addition(identifier, parent, x):
 
 
 def generate():
+    MATERIALS.clear()
+    MESHES.clear()
     bpy.ops.object.select_all(action="SELECT")
     bpy.ops.object.delete(use_global=False)
     for collection in (bpy.data.meshes, bpy.data.materials):
@@ -205,6 +243,7 @@ def report():
     for obj in bpy.context.scene.objects:
         bounds = None
         if obj.type == "MESH":
+            obj.data.calc_loop_triangles()
             corners = [browser(obj.matrix_world @ Vector(c)) for c in obj.bound_box]
             bounds = {"min": [min(c[i] for c in corners) for i in range(3)],
                       "max": [max(c[i] for c in corners) for i in range(3)]}
@@ -215,7 +254,7 @@ def report():
                             local_matrix=[list(row) for row in obj.matrix_local],
                             world_matrix=[list(row) for row in obj.matrix_world],
                             bounds=bounds, mesh=obj.data.name if obj.type == "MESH" else None,
-                            triangles=len(obj.data.polygons)*2 if obj.type == "MESH" else 0,
+                            triangles=len(obj.data.loop_triangles) if obj.type == "MESH" else 0,
                             extras={k: obj[k] for k in obj.keys()}))
     return dict(schema_version=1, blender_version=bpy.app.version_string,
                 coordinate_frame="positions and bounds: browser; matrices: Blender",

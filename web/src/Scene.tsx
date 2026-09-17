@@ -1,9 +1,23 @@
-import { Suspense, useEffect, useLayoutEffect, useMemo, useRef } from "react";
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import {
+  Suspense,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { Canvas, events, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, useGLTF, Line, Html } from "@react-three/drei";
 import * as THREE from "three";
 import type { OrbitControls as Controls } from "three-stdlib";
 import { sample, type View } from "./data";
+import {
+  routerPaths,
+  pointAlongPath,
+  attentionPath,
+  type Point,
+} from "./spatial";
+import Flow from "./Flow";
 export type Selection = {
   layer: number;
   group: number;
@@ -16,6 +30,8 @@ export type CameraPose = { position: number[]; target: number[] };
 type Props = {
   state: Selection;
   playing: boolean;
+  flowTime: number;
+  flowPlaying: boolean;
   reduced: boolean;
   top2: number[];
   time: number;
@@ -28,7 +44,23 @@ type Props = {
   cameraRef: React.RefObject<CameraPose | null>;
   restorePose: CameraPose | null;
 };
-type Point = [number, number, number];
+function isVisibleInScene(object: THREE.Object3D): boolean {
+  for (
+    let ancestor: THREE.Object3D | null = object;
+    ancestor;
+    ancestor = ancestor.parent
+  ) {
+    if (!ancestor.visible) return false;
+  }
+  return true;
+}
+// Three.js raycasting does not exclude hidden descendants. Filter before R3F
+// dispatches events so an invisible foreground mesh cannot consume a click.
+const sceneEvents: typeof events = (store) => ({
+  ...events(store),
+  filter: (intersections) =>
+    intersections.filter(({ object }) => isVisibleInScene(object)),
+});
 const anchors: Record<View, string> = {
   overview: "CAM_OVERVIEW",
   input: "CAM_INPUT",
@@ -175,6 +207,16 @@ function Effects({
   const flowPosition = tokenPose(p.time, p.state.spacing, p.state.layer);
   return (
     <>
+      {(p.flowPlaying || p.flowTime > 0) && (
+        <Flow
+          view={view}
+          time={p.flowTime}
+          group={g}
+          token={p.state.token}
+          spacing={p.state.spacing}
+          experts={p.top2}
+        />
+      )}
       {overview && (
         <>
           {label("input", "Token IDs", [-1, 1.9, 0])}
@@ -193,10 +235,12 @@ function Effects({
               : "Next token",
             [0, -1, 0],
           )}
-          <mesh position={flowPosition}>
-            <sphereGeometry args={[0.13, 10, 8]} />
-            <meshBasicMaterial color="#f3c779" />
-          </mesh>
+          {!p.flowPlaying && p.flowTime === 0 && (
+            <mesh position={flowPosition}>
+              <sphereGeometry args={[0.13, 10, 8]} />
+              <meshBasicMaterial color="#f3c779" />
+            </mesh>
+          )}
           {p.time >= 74 && (
             <>
               <Line
@@ -300,19 +344,50 @@ function Effects({
             .slice(0, p.state.token + 1)
             .map((weight, key) => (
               <Line
-                key={"arc" + key}
-                points={[
-                  [-6.4, -1.3, z],
-                  [-6.4 + key * 0.34, -0.7 - Math.sin(key) * 0.12, z + 0.7],
-                  [-6.4 + key * 0.34, -1.3, z + 1.2],
-                ]}
+                key={"attention-link" + key}
+                points={attentionPath(g, key)}
                 color="#79d9cd"
                 lineWidth={1 + weight * 5}
               />
             ))}
-          <Html position={[-5.2, -1.7, z + 1.2]} center style={labelStyle}>
-            Query {p.state.token + 1} → keys 1–{p.state.token + 1} · weighted
-            links
+          <Html position={[-7.6, -0.65, z + 1.2]} center style={labelStyle}>
+            Query token {p.state.token + 1}
+          </Html>
+          {data.attention[p.state.token].map((weight, key) => {
+            const allowed = key <= p.state.token;
+            const point = attentionPath(g, key).at(-1)!;
+            return (
+              <group key={"key-position" + key} position={point}>
+                <mesh>
+                  <sphereGeometry args={[0.065, 8, 6]} />
+                  <meshBasicMaterial color={allowed ? "#79d9cd" : "#59636b"} />
+                </mesh>
+                <Html
+                  position={[0, -0.3, 0]}
+                  center
+                  style={{
+                    ...labelStyle,
+                    fontSize: 10,
+                    padding: "2px 4px",
+                    textAlign: "center",
+                    color: allowed ? "#d6fff7" : "#8c969e",
+                  }}
+                >
+                  K{key + 1}
+                  <br />
+                  {allowed ? weight.toFixed(2) : "×"}
+                </Html>
+              </group>
+            );
+          })}
+          <Html
+            position={[-8.8, -2.1, z + 1.2]}
+            center
+            style={{ ...labelStyle, fontSize: 10 }}
+          >
+            Keys: token positions
+            <br />
+            Values: weights · × masked
           </Html>
           {(["q", "k", "v"] as const).map((kind, i) => {
             const before = data.rope[kind];
@@ -322,8 +397,8 @@ function Effects({
                 : kind === "k"
                   ? data.rope.rotatedK
                   : data.rope.rotatedV;
-            const x = -6.8 + i * 1.75,
-              y = -2.65;
+            const x = -1.5,
+              y = 0.6 - i * 1.3;
             return (
               <group key={kind}>
                 <Line
@@ -342,11 +417,7 @@ function Effects({
                   color={kind === "v" ? "#bc97ed" : "#efc578"}
                   lineWidth={3}
                 />
-                <Html
-                  position={[x, y - 0.45 - (i % 2) * 0.38, z]}
-                  center
-                  style={labelStyle}
-                >
+                <Html position={[x + 1.1, y, z]} center style={labelStyle}>
                   {kind.toUpperCase()} {kind === "v" ? "unchanged" : "rotated"}
                 </Html>
               </group>
@@ -371,9 +442,7 @@ function Effects({
             return (
               <group key={kind}>
                 <Html position={[x + 0.8, -1.35, z]} center style={labelStyle}>
-                  {kind.toUpperCase()} ·{" "}
-                  {p.decode ? "8 retained + 1 new" : "8 prefill"} rows ·
-                  activations
+                  {kind.toUpperCase()} · {p.decode ? 9 : 8} activation rows
                 </Html>
                 {Array.from({ length: p.decode ? 9 : 8 }, (_, row) => (
                   <group key={row}>
@@ -413,13 +482,7 @@ function Effects({
           {p.top2.map((e, i) => (
             <Line
               key={"route" + e}
-              points={[
-                [2.25, 0, 0],
-                [3.15, 0.8, (e - 3.5) * 1.1],
-                [5, 0.55, (e - 3.5) * 1.1],
-                [6.4, 0.8, (e - 3.5) * 1.1],
-                [8, 0, 0],
-              ]}
+              points={[...routerPaths(e).input, ...routerPaths(e).output]}
               color={i === 0 ? "#f3c779" : "#64cfbf"}
               lineWidth={3}
             />
@@ -444,15 +507,17 @@ function Effects({
         </>
       )}
       {view === "router" &&
+        !p.flowPlaying &&
+        p.flowTime === 0 &&
         p.top2.map((e, i) => {
-          const t = p.playing
-            ? Math.min(1, Math.max(0, (p.time - 49) / 7))
-            : 0.55;
-          const start = new THREE.Vector3(5, 0.8, (e - 3.5) * 1.1),
-            end = new THREE.Vector3(8, 0, 0);
-          const position = start.lerp(end, t);
+          const t = Math.min(1, Math.max(0, (p.time - 49) / 7));
+          const position = pointAlongPath(routerPaths(e).output, t);
           return (
-            <mesh key={"output-vector" + e} position={position}>
+            <mesh
+              key={"output-vector" + e}
+              name={"output-vector" + e}
+              position={position}
+            >
               <boxGeometry args={[0.28, 0.28, 0.28]} />
               <meshBasicMaterial color={i === 0 ? "#f3c779" : "#64cfbf"} />
             </mesh>
@@ -503,9 +568,21 @@ function Model(p: Props) {
     return s;
   }, [original]);
   const controls = useRef<Controls>(null);
-  const { camera, gl, size } = useThree();
+  const lastPick = useRef<Record<string, any> | null>(null);
+  const { camera, gl, size, scene: renderScene } = useThree();
   const destination = useRef<CameraPose | null>(null);
   const moving = useRef(false);
+  const [presentationView, setPresentationView] = useState<View | null>(null);
+  const navigation = useRef<{
+    elapsed: number;
+    from: CameraPose;
+    via: CameraPose;
+    to: CameraPose;
+    context: View;
+    target: View;
+    phase: string;
+  } | null>(null);
+  const visibleView = presentationView ?? p.state.view;
   const viewPoses = useRef(new Map<string, CameraPose>());
   const previousView = useRef<{ key: string; revision: number } | null>(null);
   const nodes = useMemo(() => {
@@ -526,7 +603,7 @@ function Model(p: Props) {
   );
   useEffect(() => () => texture.dispose(), [texture]);
   useLayoutEffect(() => {
-    const view = p.state.view,
+    const view = visibleView,
       overview = ["overview", "input", "output"].includes(view),
       detail = ["attention", "cache", "matrix"].includes(view);
     scene.traverse((o) => {
@@ -591,6 +668,13 @@ function Model(p: Props) {
           o.visible = o.userData.id === `cache_${p.state.group}`;
       });
     }
+    // A cache link is meaningful only when both its projection and cache sheet
+    // are visible. The focused cache view hides projections as well.
+    for (let group = 0; group < 8; group++) {
+      nodes.get(`cache_link_${group}`)!.visible =
+        isVisibleInScene(nodes.get(`k_${group}`)!) &&
+        isVisibleInScene(nodes.get(`cache_k_${group}`)!);
+    }
     const stack = nodes.get("stack")!;
     stack.visible = overview || view === "layer";
     stack.position.set(
@@ -624,7 +708,7 @@ function Model(p: Props) {
     material.color.set("#ffffff");
     material.needsUpdate = true;
     scene.updateMatrixWorld(true);
-  }, [scene, nodes, p.state, p.top2, texture]);
+  }, [scene, nodes, p.state, p.top2, texture, visibleView]);
   useEffect(() => {
     const viewKey =
       p.state.view +
@@ -640,10 +724,52 @@ function Model(p: Props) {
       !p.playing &&
       controls.current
     )
-      viewPoses.current.set(previous.key, {
-        position: camera.position.toArray(),
-        target: controls.current.target.toArray(),
-      });
+      viewPoses.current.set(
+        previous.key,
+        navigation.current?.to ?? {
+          position: camera.position.toArray(),
+          target: controls.current.target.toArray(),
+        },
+      );
+    const travel = (pose: CameraPose) => {
+      destination.current = pose;
+      moving.current = true;
+      if (
+        previous &&
+        previous.key !== viewKey &&
+        !forced &&
+        !p.playing &&
+        !p.reduced &&
+        controls.current
+      ) {
+        const fromView = previous.key.split(":")[0] as View;
+        const context: View = [fromView, p.state.view].some((v) =>
+          ["overview", "input", "output"].includes(v),
+        )
+          ? "overview"
+          : "layer";
+        const scale = Math.max(1, 1.6 / (size.width / size.height));
+        navigation.current = {
+          elapsed: 0,
+          phase: "zoom-out",
+          context,
+          target: p.state.view,
+          from: {
+            position: camera.position.toArray(),
+            target: controls.current.target.toArray(),
+          },
+          via:
+            context === "overview"
+              ? { position: [17, 15, 22 * scale], target: [0, 0, 0] }
+              : { position: [5, 10, 23 * scale], target: [0, 0.6, 0] },
+          to: pose,
+        };
+        setPresentationView(fromView);
+      } else {
+        navigation.current = null;
+        setPresentationView(null);
+      }
+    };
     if (forced) viewPoses.current.clear();
     previousView.current = { key: viewKey, revision: p.cameraRevision };
     if (
@@ -652,8 +778,7 @@ function Model(p: Props) {
       previous?.key !== viewKey &&
       viewPoses.current.has(viewKey)
     ) {
-      destination.current = viewPoses.current.get(viewKey)!;
-      moving.current = true;
+      travel(viewPoses.current.get(viewKey)!);
       return;
     }
     if (!forced && !p.playing && previous?.key === viewKey) return;
@@ -693,8 +818,7 @@ function Model(p: Props) {
     if (p.state.view === "overview") {
       position = [13, 11, 16 * distanceScale];
     }
-    destination.current = { position, target };
-    moving.current = true;
+    travel({ position, target });
   }, [
     nodes,
     p.state.view,
@@ -706,6 +830,8 @@ function Model(p: Props) {
   ]);
   useEffect(() => {
     if (p.restorePose) {
+      navigation.current = null;
+      setPresentationView(null);
       destination.current = p.restorePose;
       moving.current = true;
     }
@@ -742,7 +868,37 @@ function Model(p: Props) {
     });
   }, [nodes, scene]);
   useFrame((_, dt) => {
-    if (controls.current && moving.current && destination.current) {
+    if (navigation.current && controls.current) {
+      const route = navigation.current;
+      route.elapsed += dt;
+      const t = route.elapsed;
+      const phase = t < 0.45 ? "zoom-out" : t < 0.6 ? "context" : "zoom-in";
+      if (phase !== route.phase) {
+        route.phase = phase;
+        setPresentationView(phase === "context" ? route.context : route.target);
+      }
+      const start = t < 0.6 ? route.from : route.via;
+      const end = t < 0.6 ? route.via : route.to;
+      const linear =
+        t < 0.6 ? Math.min(1, t / 0.45) : Math.min(1, (t - 0.6) / 0.45);
+      const u = linear * linear * (3 - 2 * linear);
+      camera.position.lerpVectors(
+        new THREE.Vector3(...start.position),
+        new THREE.Vector3(...end.position),
+        u,
+      );
+      controls.current.target.lerpVectors(
+        new THREE.Vector3(...start.target),
+        new THREE.Vector3(...end.target),
+        u,
+      );
+      controls.current.update();
+      if (t >= 1.05) {
+        navigation.current = null;
+        setPresentationView(null);
+        moving.current = false;
+      }
+    } else if (controls.current && moving.current && destination.current) {
       const d = destination.current;
       const alpha = p.reduced ? 1 : 1 - Math.exp(-dt * 8);
       camera.position.lerp(new THREE.Vector3(...d.position), alpha);
@@ -778,18 +934,79 @@ function Model(p: Props) {
       `q_${p.state.group * 4}`,
       `score_${p.state.group}`,
       "router",
+      "input",
+      "embedding",
+      "final_norm",
+      "lm_head",
+      "output",
+      ...Array.from({ length: 8 }, (_, group) => `cache_link_${group}`),
+      ...Array.from(
+        { length: 8 },
+        (_, group) => `cache_link_${group}_segment_0`,
+      ),
+      ...Array.from({ length: 8 }, (_, group) => `cache_${group}`),
+      ...Array.from({ length: 8 }, (_, group) => `k_${group}`),
+      ...Array.from({ length: 8 }, (_, group) => `score_${group}`),
+      ...Array.from({ length: 8 }, (_, group) => `cache_k_${group}`),
+      ...Array.from({ length: 8 }, (_, group) => `cache_v_${group}`),
       `expert_${p.state.expert}`,
       "expert_detail",
     ];
     const rect = gl.domElement.getBoundingClientRect();
     (window as any).__explorerScene = {
       selected: { ...p.state },
+      presentedView: visibleView,
+      navigationPhase: navigation.current?.phase ?? "settled",
       expandedCount: nodes.get("focus")?.visible ? 1 : 0,
       decode: p.decode,
+      flowTime: p.flowTime,
+      flowPlaying: p.flowPlaying,
+      flowPackets: renderScene.children.flatMap(function collect(o): any[] {
+        return [
+          ...(o.userData.flowPacket
+            ? [
+                {
+                  kind: o.userData.flowPacket,
+                  position: o.getWorldPosition(new THREE.Vector3()).toArray(),
+                  visible: isVisibleInScene(o),
+                },
+              ]
+            : []),
+          ...o.children.flatMap(collect),
+        ];
+      }),
       time: p.time,
       routeExperts: p.top2,
+      routerPaths: p.top2.map((expert) => {
+        const paths = routerPaths(expert);
+        return { expert, ...paths, points: [...paths.input, ...paths.output] };
+      }),
+      routerOutputProgress: Math.min(1, Math.max(0, (p.time - 49) / 7)),
+      lastPick: lastPick.current,
+      routerOutputPositions:
+        p.state.view === "router"
+          ? p.top2.map((expert) => ({
+              expert,
+              position: renderScene
+                .getObjectByName("output-vector" + expert)
+                ?.getWorldPosition(new THREE.Vector3())
+                .toArray(),
+            }))
+          : [],
       routeWeights: values.router.weights,
       attentionRow: values.attention[p.state.token],
+      attentionEndpoints: values.attention[p.state.token].map(
+        (weight, key) => ({
+          key,
+          allowed: key <= p.state.token,
+          weight,
+          position: attentionPath(p.state.group, key).at(-1),
+        }),
+      ),
+      attentionPaths: Array.from({ length: p.state.token + 1 }, (_, key) => ({
+        key,
+        points: attentionPath(p.state.group, key),
+      })),
       tokenPosition: tokenPose(p.time, p.state.spacing, p.state.layer),
       generationNewToken: p.time >= 74,
       chosenChunk: values.candidates.reduce((best, item) =>
@@ -837,16 +1054,27 @@ function Model(p: Props) {
       <primitive
         object={scene}
         onClick={(e: any) => {
+          if (navigation.current) return;
           e.stopPropagation();
           let o = e.object;
           while (o && !o.userData.interactive) o = o.parent;
-          if (o) p.onPick(o.userData.id || o.name, o.userData);
+          if (o) {
+            lastPick.current = {
+              ...o.userData,
+              id: o.userData.id || o.name,
+              count: (lastPick.current?.count ?? 0) + 1,
+            };
+            p.onPick(o.userData.id || o.name, o.userData);
+          }
         }}
       />
-      <Effects p={p} nodes={nodes} />
+      <Effects
+        p={{ ...p, state: { ...p.state, view: visibleView } }}
+        nodes={nodes}
+      />
       <OrbitControls
         ref={controls}
-        enabled={!p.playing}
+        enabled={!p.playing && presentationView === null}
         makeDefault
         minDistance={0.7}
         maxDistance={65}
@@ -870,6 +1098,7 @@ function Model(p: Props) {
 export default function Scene(p: Props) {
   return (
     <Canvas
+      events={sceneEvents}
       camera={{ position: [18, 15, 20], fov: 45, near: 0.05, far: 200 }}
       dpr={p.lowQuality ? 1 : [1, 1.5]}
       gl={{ antialias: true }}

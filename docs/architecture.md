@@ -25,3 +25,11 @@ Absolute timeline time determines chapter, pose, demonstration progress and high
 ## Verification
 
 Check first/middle/last layer overview → layer → attention → matrix → layer → overview round trips. Check all 32 selections, each four-Q group, both residual paths, eight alternatives and two selected routes. Inspect two oblique angles, changed spacing, extracted layer, matrix and narrow viewport. Numerical cells and spatial highlights use the same deterministic data. Track structural, browser visual/interaction and human learner evidence separately.
+
+## Inspection and flow
+
+Manual section navigation travels from the current camera through a wider common context (the layer or whole model), then into the destination. The outgoing, contextual and incoming scene presentations are distinct from the selected destination. Reduced motion goes directly to the destination. Tour seeking retains its deterministic camera contract.
+
+Flow.tsx renders a separate 12-second illustrative computation cycle. Token points, sampled vector bundles and tensor grids move along paths in spatial.ts; markers do not imply real inference. The flow clock can play, pause or advance one step without running the camera tour. Overview flow includes the next-token return path; focused views show transformations and K/V reuse. Navigation pauses and resets the local demonstration.
+
+inspection.ts owns the worked RMSNorm calculation independently of rendering. Its eight-channel toy vector makes each arithmetic step inspectable; it is not a slice normalized as though it were the real 4,096-channel vector. Illustrative learned scales depend on layer, stage and channel, and remain fixed across tokens. App.tsx presents the operation → vector → scalar drill-down with selected-channel arithmetic and shape/dimension explanations.

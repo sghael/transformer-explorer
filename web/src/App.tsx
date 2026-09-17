@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Scene, { type CameraPose, type Selection } from "./Scene";
-import { sample, tokens, chapters, chapterAt, type View } from "./data";
+import { inspectRmsNorm } from "./inspection";
+import {
+  sample,
+  tokens,
+  chapters,
+  chapterAt,
+  architecture,
+  type View,
+} from "./data";
 const initial: Selection = {
   layer: 11,
   group: 2,
@@ -51,6 +59,95 @@ const explanations: Record<View, string> = {
   output:
     "After all layers, final RMSNorm and the language-model head produce 32,000 vocabulary scores, called logits. A selection rule chooses the next token. The next decode step reuses each layer’s cached keys and values.",
 };
+type ShapeExplanation = {
+  title: string;
+  kind: string;
+  role: string;
+  dimensions: string;
+  arrangement: string;
+};
+const number = (value: number) => value.toLocaleString("en-US");
+const hidden = number(architecture.hidden_size);
+const intermediate = number(architecture.intermediate_size);
+const vocabulary = number(architecture.vocab_size);
+const head = number(architecture.head_dim);
+const queriesPerGroup = architecture.attention_heads / architecture.kv_heads;
+function explainShape(selection: Selection, decode: boolean): ShapeExplanation {
+  const layer = selection.layer + 1;
+  const explanations: Record<View, ShapeExplanation> = {
+    overview: {
+      title: "Decoder layer stack",
+      kind: "Repeated computation",
+      role: "Each thin slice represents a complete decoder layer with its own weights.",
+      dimensions: `${architecture.num_layers} sequential layers; ${hidden} activation channels per token.`,
+      arrangement:
+        "Depth orders the layers. It does not depict physical memory or parameter coordinates.",
+    },
+    input: {
+      title: "Token embedding table",
+      kind: "Learned weights → activation",
+      role: "The matrix sheet represents a lookup table. A token ID selects one row to form a vector.",
+      dimensions: `${vocabulary} vocabulary rows × ${hidden} channels. One lookup returns ${hidden} numbers.`,
+      arrangement:
+        "Vocabulary rows are possible token IDs; the displayed token sequence has separate position indices.",
+    },
+    layer: {
+      title: `Layer ${layer}: residual stream`,
+      kind: "Activations and operations",
+      role: "The connecting path carries a token vector. Open normalization frames and attention or expert processing modify it; each + junction adds a bypassed vector.",
+      dimensions: `${hidden} channels enter and leave each sublayer. Both residual additions preserve this width.`,
+      arrangement:
+        "Attention groups and expert alternatives separate in depth within this one layer.",
+    },
+    attention: {
+      title: `Group ${selection.group + 1}: Q / K / V projections`,
+      kind: "Learned projection weights",
+      role: "Each matrix sheet maps an activation into a query, key or value vector. The small score grid contains runtime attention weights.",
+      dimensions: `${hidden} → ${head} channels per head (${head} × ${hidden} weights). ${architecture.attention_heads} Q heads share ${architecture.kv_heads} K/V pairs.`,
+      arrangement: `${queriesPerGroup} Q sheets share this K/V pair. Numbered key endpoints identify token positions, not additional heads.`,
+    },
+    cache: {
+      title: `Layer ${layer} / group ${selection.group + 1}: K/V cache`,
+      kind: "Stored activations",
+      role: "Separate K and V sheets retain earlier token vectors. A new row appears for the next decoded position.",
+      dimensions: `${tokens.length + (decode ? 1 : 0)} positions × ${head} channels per sheet in this example; only sampled channels are drawn.`,
+      arrangement: `Rows are positions. Each of ${architecture.kv_heads} groups has its own K/V entries in each of ${architecture.num_layers} layers.`,
+    },
+    router: {
+      title: `Layer ${layer}: router and expert bank`,
+      kind: "Learned weights and parallel operations",
+      role: "The router scores alternatives. Each expert enclosure represents a full transformation; two output vectors travel to the merge.",
+      dimensions: `Router: ${hidden} → ${architecture.experts} scores. ${architecture.experts_per_token} selected experts each return ${hidden} channels.`,
+      arrangement:
+        "Depth separates expert alternatives. Connector length and expert size do not represent routing probability.",
+    },
+    expert: {
+      title: `Expert ${selection.expert + 1}: three projections`,
+      kind: "Learned weights and operations",
+      role: "Gate and up sheets project the same input. SiLU transforms the gate, multiplication joins the branches, and the down sheet produces the output.",
+      dimensions: `Gate / up: ${hidden} → ${intermediate} each. Down: ${intermediate} → ${hidden}.`,
+      arrangement:
+        "The two branches run in parallel. Each sheet represents a matrix; the small operation nodes contain no weight matrix.",
+    },
+    matrix: {
+      title: `Group ${selection.group + 1}: attention weights`,
+      kind: "Runtime values",
+      role: "The grid shows how much each query position uses each key position. The highlighted row belongs to the selected query token.",
+      dimensions: `${tokens.length} query positions × ${tokens.length} key positions in this example. Each associated value vector has ${head} channels.`,
+      arrangement:
+        "Rows and columns index positions. Masked future cells contribute zero weight.",
+    },
+    output: {
+      title: "Final normalization and vocabulary projection",
+      kind: "Operation and learned weights",
+      role: "Final normalization rescales the vector. The LM-head matrix maps it to vocabulary scores; the next-token marker represents the chosen token ID.",
+      dimensions: `LM head: ${hidden} → ${vocabulary} logits (${vocabulary} × ${hidden} weights).`,
+      arrangement:
+        "A logit belongs to a vocabulary entry. It is separate from the position where the chosen token is appended.",
+    },
+  };
+  return explanations[selection.view];
+}
 const build = (import.meta as any).env.VITE_BUILD_ID || "development";
 const reviewEnabled =
   (import.meta as any).env.VITE_REVIEW === "1" || (import.meta as any).env.DEV;
@@ -60,11 +157,20 @@ export default function App() {
   const [lowQuality, setLowQuality] = useState(false);
   const [time, setTime] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [flowTime, setFlowTime] = useState(0);
+  const [flowPlaying, setFlowPlaying] = useState(false);
+  const [inspectedComponent, setInspectedComponent] = useState<
+    "norm1" | "norm2" | null
+  >(null);
+  const [inspectionDepth, setInspectionDepth] = useState<
+    "operation" | "vector" | "scalar"
+  >("operation");
+  const [inspectionChannel, setInspectionChannel] = useState(0);
   const [speed, setSpeed] = useState(1);
   const [ready, setReady] = useState<any>(null);
   const [context, setContext] = useState("");
   const [restorePose, setRestorePose] = useState<CameraPose | null>(null);
-  const [decode, setDecode] = useState(false);
+  const [decode, setDecode] = useState<boolean | null>(null);
   const [matrixOrigin, setMatrixOrigin] = useState<View>("attention");
   const cameraRef = useRef<CameraPose | null>(null);
   const reduced = useMemo(
@@ -80,14 +186,32 @@ export default function App() {
   );
   const chapter = chapterAt(time);
   const showingDecode =
-    decode || (playing && ((time >= 41.5 && time < 45) || time >= 74));
+    state.view === "cache" && (flowPlaying || flowTime > 0)
+      ? flowTime >= 6
+      : (decode ?? ((time >= 41.5 && time < 45) || time >= 74));
+  const rms = useMemo(
+    () =>
+      inspectRmsNorm(
+        state.layer,
+        state.token,
+        inspectedComponent === "norm2" ? 2 : 1,
+      ),
+    [state.layer, state.token, inspectedComponent],
+  );
+  const shape = explainShape(state, showingDecode);
   const change = (patch: Partial<Selection>) => {
     setPlaying(false);
+    setFlowPlaying(false);
+    setFlowTime(0);
+    if (patch.view && patch.view !== "layer") setInspectedComponent(null);
     if (patch.view === "matrix" && state.view !== "matrix")
       setMatrixOrigin(state.view);
     setState((s) => ({ ...s, ...patch }));
   };
   const applyChapter = (t: number) => {
+    setFlowPlaying(false);
+    setFlowTime(0);
+    setInspectedComponent(null);
     const c = chapterAt(t);
     setState((s) => ({
       ...s,
@@ -95,8 +219,21 @@ export default function App() {
       view: c.view,
       spacing: c.pose.spacing,
     }));
-    setDecode(t >= 74 || (c.id === "cache" && t >= 41.5));
+    setDecode(null);
   };
+  useEffect(() => {
+    if (!flowPlaying) return;
+    let frame: number;
+    let previous = performance.now();
+    const tick = (now: number) => {
+      const elapsed = (now - previous) / 1000;
+      previous = now;
+      setFlowTime((value) => (value + elapsed) % 12);
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [flowPlaying]);
   useEffect(() => {
     if (!playing) return;
     let frame: number;
@@ -127,13 +264,15 @@ export default function App() {
       state,
       time,
       playing,
+      flowTime,
+      flowPlaying,
       ready,
       get camera() {
         return cameraRef.current;
       },
       build,
     };
-  }, [state, time, playing, ready]);
+  }, [state, time, playing, flowTime, flowPlaying, ready]);
   const review = () => {
     const value = JSON.stringify(
       {
@@ -142,6 +281,15 @@ export default function App() {
         seed: 1729,
         state,
         time,
+        decode: showingDecode,
+        flowTime,
+        flowPlaying,
+        inspectedComponent,
+        inspectionDepth,
+        inspectionChannel,
+        lowQuality,
+        speed,
+        matrixOrigin,
         camera: cameraRef.current,
         viewport: [innerWidth, innerHeight],
       },
@@ -189,7 +337,38 @@ export default function App() {
         )
       )
         throw Error("Invalid camera");
+      if (
+        typeof value.decode !== "boolean" ||
+        typeof value.lowQuality !== "boolean" ||
+        ![0.5, 1, 1.5].includes(value.speed) ||
+        !views.includes(value.matrixOrigin)
+      )
+        throw Error("Invalid presentation state");
+      if (
+        !Number.isFinite(value.flowTime) ||
+        value.flowTime < 0 ||
+        value.flowTime >= 12 ||
+        typeof value.flowPlaying !== "boolean"
+      )
+        throw Error("Invalid flow state");
+      if (
+        ![null, "norm1", "norm2"].includes(value.inspectedComponent) ||
+        !["operation", "vector", "scalar"].includes(value.inspectionDepth) ||
+        !Number.isInteger(value.inspectionChannel) ||
+        value.inspectionChannel < 0 ||
+        value.inspectionChannel >= 8
+      )
+        throw Error("Invalid inspection state");
       setPlaying(false);
+      setFlowPlaying(false);
+      setFlowTime(value.flowTime);
+      setInspectedComponent(value.inspectedComponent);
+      setInspectionDepth(value.inspectionDepth);
+      setInspectionChannel(value.inspectionChannel);
+      setDecode(value.decode);
+      setLowQuality(value.lowQuality);
+      setSpeed(value.speed);
+      setMatrixOrigin(value.matrixOrigin);
       setState(value.state);
       setTime(value.time);
       setRestorePose(value.camera);
@@ -212,6 +391,16 @@ export default function App() {
         <span>Mixtral 8×7B · A spatial guide</span>
         <button
           onClick={() => {
+            setDecode(null);
+            setFlowPlaying(false);
+            setFlowTime(0);
+            setInspectedComponent(null);
+            setInspectionDepth("operation");
+            setInspectionChannel(0);
+            setLowQuality(false);
+            setSpeed(1);
+            setRestorePose(null);
+            setMatrixOrigin("attention");
             setState(initial);
             setTime(0);
             setPlaying(false);
@@ -240,6 +429,8 @@ export default function App() {
               lowQuality={lowQuality}
               cameraRevision={cameraRevision}
               time={time}
+              flowTime={flowTime}
+              flowPlaying={flowPlaying}
               decode={showingDecode}
               playing={playing}
               reduced={reduced}
@@ -248,20 +439,30 @@ export default function App() {
               restorePose={restorePose}
               onReady={setReady}
               onPick={(id, d) => {
-                if (/^layer_\d+$/.test(id))
-                  change({ layer: d.layer, view: "layer" });
-                else if (d.group !== undefined)
-                  change({ group: d.group, view: "attention" });
-                else if (d.expert !== undefined)
-                  change({ expert: d.expert, view: "expert" });
-                else
-                  change({
-                    view: id.includes("router")
-                      ? "router"
-                      : id.includes("attention")
-                        ? "attention"
-                        : "layer",
-                  });
+                const patch: Partial<Selection> = {};
+                if (Number.isInteger(d.layer) && d.layer >= 0 && d.layer < 32)
+                  patch.layer = d.layer;
+                if (d.group !== undefined) patch.group = d.group;
+                if (d.expert !== undefined) patch.expert = d.expert;
+                patch.view =
+                  id === "input" || id === "embedding"
+                    ? "input"
+                    : ["final_norm", "lm_head", "output"].includes(id)
+                      ? "output"
+                      : id.startsWith("cache_")
+                        ? "cache"
+                        : d.expert !== undefined
+                          ? "expert"
+                          : id.includes("router")
+                            ? "router"
+                            : d.group !== undefined || id.includes("attention")
+                              ? "attention"
+                              : "layer";
+                change(patch);
+                if (id === "norm1" || id === "norm2") {
+                  setInspectedComponent(id);
+                  setInspectionDepth("operation");
+                } else setInspectedComponent(null);
               }}
             />
             {!ready && (
@@ -340,6 +541,39 @@ export default function App() {
             <button onClick={() => change({ view: "overview" })}>
               Overview
             </button>
+          </div>
+          <div className="flow-controls" aria-label="Flow demonstration">
+            <div>
+              <button
+                aria-pressed={flowPlaying}
+                onClick={() => {
+                  setPlaying(false);
+                  setFlowPlaying((value) => !value);
+                }}
+              >
+                {flowPlaying ? "Pause flow" : "Animate flow"}
+              </button>
+              <button
+                onClick={() => {
+                  setPlaying(false);
+                  setFlowPlaying(false);
+                  setFlowTime((value) => (value + 1) % 12);
+                }}
+              >
+                Step flow
+              </button>
+              <output>{flowTime.toFixed(1)} / 12 s</output>
+            </div>
+            <p>
+              Illustrative cycle ·{" "}
+              {flowTime < 4
+                ? "input enters the operation"
+                : flowTime < 8
+                  ? "the selected operation transforms the activation"
+                  : "output continues to the next stage"}
+              . This repeating demonstration is separate from model inference
+              and the guided tour.
+            </p>
           </div>
           <div className="tour">
             <div className="tour-buttons">
@@ -463,9 +697,189 @@ export default function App() {
               </select>
             </label>
           </div>
+          <section
+            className="shape-explanation"
+            aria-label="Selected component shape and dimensions"
+          >
+            <span className="shape-kind">{shape.kind}</span>
+            <h3>{shape.title}</h3>
+            <p>{shape.role}</p>
+            <dl>
+              <div>
+                <dt>Dimensions</dt>
+                <dd>{shape.dimensions}</dd>
+              </div>
+              <div>
+                <dt>Spatial meaning</dt>
+                <dd>{shape.arrangement}</dd>
+              </div>
+            </dl>
+            <p className="shape-scale">
+              Geometry is schematic. Shape size, thickness and displayed cells
+              do not encode parameter counts.
+            </p>
+          </section>
           <p className="data-label">
             Illustrative values · seed 1729 · no model inference
           </p>
+          {state.view === "layer" && (
+            <section className="rms-inspection" aria-label="RMSNorm inspection">
+              <button
+                onClick={() => {
+                  setInspectedComponent("norm1");
+                  setInspectionDepth("operation");
+                }}
+              >
+                Inspect RMSNorm
+              </button>
+              {inspectedComponent && (
+                <>
+                  <nav
+                    className="inspection-breadcrumb"
+                    aria-label="Inspection path"
+                  >
+                    <button onClick={() => change({ view: "overview" })}>
+                      Model
+                    </button>
+                    <span>→</span>
+                    <button onClick={() => setInspectedComponent(null)}>
+                      Layer {state.layer + 1}
+                    </button>
+                    <span>→</span>
+                    <button onClick={() => setInspectionDepth("operation")}>
+                      RMSNorm {inspectedComponent === "norm1" ? 1 : 2}
+                    </button>
+                    {inspectionDepth !== "operation" && (
+                      <>
+                        <span>→</span>
+                        <button onClick={() => setInspectionDepth("vector")}>
+                          Activation vector
+                        </button>
+                      </>
+                    )}
+                    {inspectionDepth === "scalar" && (
+                      <>
+                        <span>→</span>
+                        <span>Channel {inspectionChannel + 1}</span>
+                      </>
+                    )}
+                  </nav>
+                  <h3>
+                    RMSNorm {inspectedComponent === "norm1" ? 1 : 2}: scale an
+                    activation vector
+                  </h3>
+                  <p>
+                    The open frame represents an operation. RMSNorm divides all
+                    channels by one root mean square denominator, then applies a
+                    learned scale γ to each channel.
+                  </p>
+                  <p className="formula">yᵢ = γᵢ × xᵢ / √(mean(x²) + ε)</p>
+                  <p>
+                    This model uses {hidden} channels. The worked calculation
+                    below uses a complete{" "}
+                    <strong>8-channel illustrative vector</strong>, so its mean
+                    divides by 8.
+                  </p>
+                  <button onClick={() => setInspectionDepth("vector")}>
+                    Inspect activation vector
+                  </button>
+                  {inspectionDepth !== "operation" && (
+                    <>
+                      <p>
+                        Token {state.token + 1} · layer {state.layer + 1}.
+                        Select one scalar channel:
+                      </p>
+                      <div
+                        className="activation-channels"
+                        role="group"
+                        aria-label="Activation channels"
+                      >
+                        {rms.values.map((value, channel) => (
+                          <button
+                            key={channel}
+                            aria-label={`Inspect channel ${channel + 1}`}
+                            aria-pressed={
+                              inspectionDepth === "scalar" &&
+                              inspectionChannel === channel
+                            }
+                            onClick={() => {
+                              setInspectionChannel(channel);
+                              setInspectionDepth("scalar");
+                            }}
+                          >
+                            <span>x{channel + 1}</span>
+                            <strong>{value.toFixed(2)}</strong>
+                          </button>
+                        ))}
+                      </div>
+                      <dl className="rms-calculation">
+                        <div>
+                          <dt>Mean of the eight squared values</dt>
+                          <dd>
+                            (
+                            {rms.squares
+                              .map((value) => value.toFixed(4))
+                              .join(" + ")}
+                            ) / 8 ={" "}
+                            <strong>{rms.meanSquares.toFixed(6)}</strong>
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Illustrative stability constant ε</dt>
+                          <dd>{rms.epsilon}</dd>
+                        </div>
+                        <div>
+                          <dt>Shared denominator</dt>
+                          <dd>
+                            √({rms.meanSquares.toFixed(6)} + {rms.epsilon}) ={" "}
+                            <strong>{rms.denominator.toFixed(6)}</strong>
+                          </dd>
+                        </div>
+                      </dl>
+                    </>
+                  )}
+                  {inspectionDepth === "scalar" && (
+                    <>
+                      <h4>
+                        Channel {inspectionChannel + 1}: one activation value
+                      </h4>
+                      <p>
+                        An activation channel holds a scalar number at this
+                        position in the computation. It is not a separate
+                        neuron-shaped object. The learned scale is a weight; x
+                        and y are runtime values.
+                      </p>
+                      <dl className="rms-calculation">
+                        <div>
+                          <dt>Input xᵢ</dt>
+                          <dd>{rms.values[inspectionChannel].toFixed(2)}</dd>
+                        </div>
+                        <div>
+                          <dt>Squared input xᵢ²</dt>
+                          <dd>{rms.squares[inspectionChannel].toFixed(4)}</dd>
+                        </div>
+                        <div>
+                          <dt>Illustrative learned scale γᵢ</dt>
+                          <dd>{rms.gamma[inspectionChannel].toFixed(2)}</dd>
+                        </div>
+                        <div>
+                          <dt>Output yᵢ</dt>
+                          <dd>
+                            {rms.gamma[inspectionChannel].toFixed(2)} ×{" "}
+                            {rms.values[inspectionChannel].toFixed(2)} /{" "}
+                            {rms.denominator.toFixed(6)} ={" "}
+                            <strong>
+                              {rms.output[inspectionChannel].toFixed(6)}
+                            </strong>
+                          </dd>
+                        </div>
+                      </dl>
+                    </>
+                  )}
+                </>
+              )}
+            </section>
+          )}
           {["attention", "matrix"].includes(state.view) && (
             <>
               <h3>Causal attention</h3>
@@ -542,6 +956,8 @@ export default function App() {
                 aria-pressed={showingDecode}
                 onClick={() => {
                   setPlaying(false);
+                  setFlowPlaying(false);
+                  setFlowTime(0);
                   setDecode(!showingDecode);
                 }}
               >

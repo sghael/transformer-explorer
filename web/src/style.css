@@ -447,3 +447,131 @@ code {
 .matrix-legend {
   display: none;
 }
+
+.shape-explanation {
+  margin: 20px 0 16px;
+  padding: 15px 0;
+  border-top: 1px solid #3a4c57;
+  border-bottom: 1px solid #3a4c57;
+}
+.shape-kind {
+  color: #9dd8dd;
+  font-size: 11px;
+  letter-spacing: 0.035em;
+}
+.shape-explanation h3 {
+  margin: 6px 0 10px;
+  font-size: 16px;
+}
+.shape-explanation p,
+.shape-explanation dd {
+  font-size: 13px;
+  line-height: 1.5;
+}
+.shape-explanation dl {
+  margin: 12px 0;
+}
+.shape-explanation dl div + div {
+  margin-top: 10px;
+}
+.shape-explanation dt {
+  color: #dce8ef;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+.shape-explanation dd {
+  margin: 0;
+  color: #b5c6d0;
+  overflow-wrap: anywhere;
+}
+.shape-explanation .shape-scale {
+  margin-bottom: 0;
+  font-size: 11px;
+  color: #a8b9c4;
+}
+
+.flow-controls {
+  padding: 12px 0 16px;
+  border-top: 1px solid #31414c;
+}
+.flow-controls > div {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.flow-controls output {
+  font-size: 12px;
+  color: #a8bdc8;
+}
+.flow-controls p {
+  margin: 8px 0 0;
+  color: #a8bdc8;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.rms-inspection {
+  margin: 18px 0;
+}
+.inspection-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 14px 0;
+  font-size: 11px;
+}
+.inspection-breadcrumb button,
+.inspection-breadcrumb button:first-child {
+  grid-column: auto;
+  min-width: 0;
+  padding: 4px 6px;
+  font-size: 11px;
+}
+.rms-inspection p {
+  font-size: 13px;
+  line-height: 1.5;
+}
+.formula {
+  padding: 12px;
+  background: #20323b;
+  border-radius: 5px;
+  overflow-wrap: anywhere;
+}
+.activation-channels {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+}
+.activation-channels button {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  padding: 8px 4px;
+}
+.activation-channels span {
+  font-size: 11px;
+  color: #aac0cc;
+}
+.activation-channels strong {
+  font-size: 13px;
+}
+.rms-calculation {
+  font-size: 12px;
+  line-height: 1.6;
+}
+.rms-calculation div {
+  padding: 8px 0;
+  border-bottom: 1px solid #31414c;
+}
+.rms-calculation dt {
+  color: #c8d9e1;
+  font-weight: 600;
+}
+.rms-calculation dd {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  color: #adbfca;
+}

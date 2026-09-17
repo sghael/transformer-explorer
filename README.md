@@ -2,7 +2,7 @@
 
 An interactive 3D exhibit explaining how a decoder-only Transformer processes tokens and generates the next token. Visitors can explore the live scene or play a guided camera tour, pause it, and inspect the same objects.
 
-**Status: implementation in progress.** The reproducible Blender generator, GLB validation, React/Three.js viewer and deterministic educational data are implemented. Browser acceptance is ongoing. See [build instructions](docs/development.md) and [verified progress](docs/progress.md) for commands, evidence and remaining limitations.
+**Status: implemented.** The reproducible Blender generator, GLB validation, React/Three.js viewer and deterministic educational data are implemented. Browser acceptance covers all five milestones; learner comprehension and target-laptop performance remain unmeasured. The viewer includes contextual camera navigation, optional computation-flow animation, and a worked RMSNorm drill-down from vector to scalar channel. See [build instructions](docs/development.md) and [verified progress](docs/progress.md) for commands, evidence and remaining limitations.
 
 ## Start here
 

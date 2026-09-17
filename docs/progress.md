@@ -61,3 +61,34 @@ Browser evidence: **16 acceptance groups passed** on build 20260917T182656Z-2960
 The human's timeout report produced a verified firewall correction and a successful laptop retest. Learner-comprehension questions have not been administered. Target-laptop hardware performance has not been measured; software-browser frame timing and estimated texture bytes are clearly labeled. These human/device-dependent checks remain open and are not represented as tested.
 
 Privacy: private operating context, machine paths, network addresses, raw logs and the project-model review-wrapper copy remain ignored. Both staged privacy scans and both starting-history scans pass. The original checkout remains clean and on its original branch; all implementation changes are isolated.
+
+
+## Review corrections and final delivery checks
+
+PR #2 contains the implementation. The first independent review requested fixes for hidden meshes intercepting clicks, pause-dependent computation, and semantic component navigation. These are corrected: the event filter rejects intersections with invisible ancestors; cache state and router vector progress derive from absolute tour time; component IDs select their own explanation while preserving valid layer/group/expert identity. Browser verification caught and corrected the exported non-layer sentinel before publication of the verified build.
+
+Copied contexts now include decode mode, rendering quality, playback speed and matrix-return origin. Restore validates these values; Reset restores their defaults. The new review-checks.mjs suite passes all 12 groups on build **20260917T184553Z-ce44d1**, including actual projected mesh clicks, ninth-row retention while paused, actual router vector transforms, copied decode restoration and Reset. Its report and inspected cache/router captures are in artifacts/review-browser/. Formatting and numerical checks pass. Clean generation and compilation took 3.496 seconds; the GLB hash and structural counts are unchanged.
+
+The LAN preview runs as a supervised user service, independent of the launching tool session. The implementation worktree and successful release are retained. Learner comprehension and hardware-client performance remain unmeasured. Free-orbit poses can overlap anchored labels, and the long K/V captions have a minor overlap in the cache pose; numerical content remains available in the readable side panel. These visual limitations are recorded rather than treated as learner validation.
+
+The review runtime confirmed the project-configured model at high effort. Re-review follows the same wrapper, which selects effort by review round. Final repository review/landing remains pending at this record's commit; the PR records the authoritative outcome.
+
+The full 16-group browser suite also passed on build 20260917T184553Z-ce44d1, with 26 captures and no runtime/console/HTTP errors. Before the next review, human steering requested orthogonal router connectors; that visual correction is being batched into delivery.
+
+## Human-directed depth and visual refinement
+
+The human requested orthogonal routing, removal of dangling cache links, a clearer causal-attention fan, softer shapes, contextual camera navigation, explicit dimensions, visible information flow and operation-to-scalar inspection. These requests were implemented together before re-review.
+
+- Router paths use axis-aligned segments attached to the generated component faces; moving vectors follow their elbows by distance. Cache links require both endpoints to be visible. Attention shows a labeled query, numbered key positions with illustrative weights, and unconnected future positions.
+- Blender generates modest beveled operation shells and open normalization frames while retaining thin weight sheets. All 315 semantic nodes, outer bounds and coordinate checks remain valid; the asset now has 43 shared meshes and 4,900 triangles.
+- Manual navigation passes through a wider layer/model context. Rapid interrupted navigation preserves the intended destination, and reduced motion skips the detour.
+- Each view explains mathematical dimensions and schematic geometry. A separate 12-second flow cycle shows token points, sampled vector bundles, tensor grids, two-expert transformations, retained K/V reads, new K/V appends and the autoregressive token return. Play/pause/step controls are independent of the guided tour.
+- RMSNorm is the first complete model → layer → operation → vector → scalar inspection. An eight-channel teaching example exposes squared inputs, mean square, stability constant, denominator, learned scaling and selected-channel output. Real model width is identified separately as 4,096. Illustrative learned scales stay fixed across tokens; this is not real inference.
+
+Verified build **20260917T190430Z-e13ddc** passed all nine deep-browser checks, including independent DOM arithmetic for channels 1, 4 and 8 and the rapid-navigation regression. Build **20260917T190016Z-f1bb21** passed all 16 full-browser groups and 15 review-regression groups; unaffected behavior is retained across the final caption-only change. Eight original data tests and four RMSNorm tests pass. Actual layer/router/attention/cache/flow/RMSNorm and wide-context captures were inspected. Reports: artifacts/browser/, artifacts/review-browser/, artifacts/deep-browser/.
+
+Latest successful build: **20260917T190735Z-22f70e**, asset **transformer-ff74c38b729a.glb**, **190,016 bytes**, clean build **3.608 seconds**. Final flow captions sit in a fixed canvas caption to avoid covering world labels. The supervised LAN preview remains available; human laptop access is confirmed. Both paused-view and active-flow software-rendering evidence is in performance.md. Human learning assessment and target-laptop hardware performance remain unperformed, explicitly documented limitations. Free orbit can still produce label occlusion; fixed views have been inspected.
+
+All five milestone implementation loops are complete with those evidence limitations. The remaining delivery step is approval and landing of PR #2 through the repository review workflow. The PR is the authoritative final review/merge record. Requested/accepted worker settings remained project-configured model at medium effort; worker runtime effort/token accounting is unavailable. No private operating details or screenshots are tracked.
+
+Final exact-build verification: all nine deep-browser groups pass on 20260917T190735Z-22f70e, with 16 captures and no browser errors. The return-flow canvas crop was inspected and its caption no longer overlaps labels or the moving token. Both staged privacy scans pass. The complete numerical and formatting checks remain green.

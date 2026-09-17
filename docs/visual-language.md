@@ -24,9 +24,11 @@ Flow runs left to right; residual paths bypass attention and the expert bank abo
                                                ╱  eight alternatives
 ```
 
+Router connectors use orthogonal segments aligned to the scene axes, with right-angle bends at shared routing lanes. Output markers follow the same paths. Perspective may change the apparent screen angle; orbit preserves the underlying right-angle geometry.
+
 ## Attention and reading
 
-Four query sheets connect to a shared K/V pair. Nearby cache sheets extend by token row. Matrix reading uses a face-on camera and an HTML table with query rows and key columns; future cells display a mask, while allowed cells show illustrative weights. Layer/group/token identity remains above the controls.
+Four query sheets connect to a shared K/V pair. The causal-attention demonstration identifies its selected query and numbers the key-token endpoints; future positions remain visibly masked and unconnected. Connectors are visible only when their endpoint components are visible. Nearby cache sheets extend by token row. Matrix reading uses a face-on camera and an HTML table with query rows and key columns; future cells display a mask, while allowed cells show illustrative weights. Layer/group/token identity remains above the controls.
 
 ## Presentation
 
@@ -35,3 +37,9 @@ Use a dark neutral canvas, off-white text, cyan for activations, muted gold for 
 Desktop places the scene beside a reading panel. Narrow screens place the scene above the panel; controls wrap and the locator remains reachable. Essential labels stay in HTML at fixed screen sizes. Secondary equations appear on demand. Reduced motion reaches the same views immediately; it does not remove concepts or controls.
 
 Visual acceptance requires the actual loaded GLB at two oblique angles, expanded layer, attention, matrix, routing and narrow view. Original wireframes specify composition; browser evidence determines acceptance.
+
+## Deeper inspection
+
+Solid operation shells have modest rounded edges; normalization is represented by an open frame and learned matrices remain thin sheets. These are explanatory shapes, not physical components. Each view states the mathematical dimensions separately from its schematic mesh size.
+
+A moving point represents a token ID, a bundle represents sampled channels of a vector, and a grid represents sampled positions/channels of a tensor. The explicit flow controls keep the motion optional and inspectable. RMSNorm provides the first complete operation-to-scalar path: select a channel, inspect its squared input and the shared denominator, then apply its learned scale.
