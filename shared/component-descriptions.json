@@ -1,0 +1,70 @@
+{
+  "overview": {
+    "title": "A decoder-only Transformer",
+    "body": "An input sequence becomes vectors, passes through 32 decoder layers, and ends as vocabulary scores. Stack depth separates sequential layers; it does not represent a physical memory layout. All numerical demonstrations use deterministic illustrative values."
+  },
+  "input.embedding": {
+    "title": "Embedding lookup",
+    "body": "A token ID selects one row of a learned 32,000 \u00d7 4,096 embedding table. The resulting 4,096-coordinate activation enters the residual stream. Displayed word chunks and IDs are illustrative, not the output of a real tokenizer. Vocabulary size counts possible token IDs, not positions in a prompt.",
+    "dimensions": "32,000 vocabulary rows \u00d7 4,096 hidden channels"
+  },
+  "layer": {
+    "title": "One decoder layer",
+    "body": "A layer applies RMSNorm, attention, and a residual addition, then RMSNorm, sparse experts, and another residual addition. All 32 layers have their own weights. The exhibit opens one reusable assembly to explain the selected layer."
+  },
+  "norm": {
+    "title": "RMSNorm",
+    "body": "Root mean square normalization rescales an activation using the square root of its mean squared coordinates plus a small stability constant, followed by learned per-coordinate scaling. It does not subtract the coordinate mean. A bypass preserves the activation entering each sublayer.",
+    "equation": "RMSNorm(x) = x / sqrt(mean(x\u00b2) + \u03b5) \u2299 \u03b3"
+  },
+  "attention.entry": {
+    "title": "Queries, keys and values",
+    "body": "Three learned projections of the normalized activation produce queries, keys and values. A query is compared with available keys to obtain context weights; those weights combine the associated values. The attention output projection returns the concatenated head outputs to the hidden width."
+  },
+  "attention": {
+    "title": "Causal grouped-query attention",
+    "body": "The 32 query heads are arranged in eight groups. Four query heads use one shared key/value head pair, while retaining separate query projections. Each query attends to its own position and earlier positions; the causal mask excludes future positions. Sample rows are normalized illustrative scores, not a trained model\u2019s attention.",
+    "equation": "Attention(Q,K,V) = softmax(QK\u1d40 / \u221a128 + causal mask)V",
+    "axes": "Rows: query token position. Columns: key token position.",
+    "dimensions": "32 Q heads; 8 KV heads; 128 channels per head"
+  },
+  "attention.rope": {
+    "title": "Rotary position embedding",
+    "body": "RoPE rotates pairs of query and key coordinates by an angle determined by token position and coordinate pair. It changes their dot products according to relative position. Values do not receive this positional rotation. The demonstration shows the first coordinate pair; other pairs use different frequencies."
+  },
+  "cache": {
+    "title": "Keys and values retained for decode",
+    "body": "Prefill computes the prompt\u2019s K/V activations and stores them separately in each decoder layer. At decode, that layer computes the new position\u2019s Q/K/V, appends its K/V, and uses prior cached rows. Stored keys already include positional rotation. Cache rows contain activations, not weights or completed answers.",
+    "axes": "Rows: token position. Columns: sampled head channels. Separate sheets: keys and values.",
+    "dimensions": "Per layer: 8 KV heads \u00d7 stored positions \u00d7 128 channels for each of K and V"
+  },
+  "moe.router": {
+    "title": "Sparse expert routing",
+    "body": "A learned router assigns eight logits to this token\u2019s current activation. Softmax converts the scores into probabilities. The two largest probabilities select two experts; their probabilities are renormalized over that pair. Routing depends on the token and layer, not on the selected attention group. Experts have no fixed topic labels.",
+    "equation": "Selected weight w\u1d62 = p\u1d62 / (p\u2090 + p\u1d66)"
+  },
+  "moe.expert": {
+    "title": "One expert\u2019s transformation",
+    "body": "Gate and up projections independently map the same 4,096-coordinate activation to 14,336 coordinates. SiLU acts on the gate branch; elementwise multiplication combines it with the up branch. The down projection returns 4,096 coordinates. Two selected experts receive the same activation and produce separate output vectors.",
+    "equation": "Expert(x) = Wdown [SiLU(Wgate x) \u2299 (Wup x)]",
+    "dimensions": "Gate/up: 14,336 \u00d7 4,096. Down: 4,096 \u00d7 14,336 (output \u00d7 input)."
+  },
+  "moe.merge": {
+    "title": "Weighted expert outputs",
+    "body": "Multiply each of the two selected expert output vectors by its normalized routing weight, then add the results. The layer adds the preserved residual activation to this merged vector. Learned expert matrices remain separate.",
+    "equation": "y = residual + w\u2090 Expert\u2090(x) + w\u1d66 Expert\u1d66(x)"
+  },
+  "residual": {
+    "title": "Residual addition",
+    "body": "A residual path carries the incoming activation around a sublayer. Addition combines it with that sublayer\u2019s output. Each decoder layer has one bypass around attention and another around the sparse expert stage."
+  },
+  "output": {
+    "title": "From representation to next token",
+    "body": "After all decoder layers, final RMSNorm rescales the representation. The language-model head projects the final position to 32,000 vocabulary logits. A logit is a score. Softmax can convert scores to probabilities before sampling, or a selection rule can choose the highest score. Displayed probabilities are normalized over only the five illustrative candidates shown.",
+    "dimensions": "LM head: 32,000 \u00d7 4,096 (output \u00d7 input)"
+  },
+  "decode": {
+    "title": "Autoregressive generation",
+    "body": "Append the selected token to the sequence. Its position passes through every layer, reusing earlier keys and values from each layer\u2019s cache. Its final representation predicts a following token. The earlier prompt\u2019s K/V rows are retained during cached decode."
+  }
+}

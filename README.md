@@ -2,7 +2,7 @@
 
 An interactive 3D exhibit explaining how a decoder-only Transformer processes tokens and generates the next token. Visitors can explore the live scene or play a guided camera tour, pause it, and inspect the same objects.
 
-**Status: project seed.** This repository contains the design brief, implementation plan, current agent prompt, initial model specification, and starter directories. The Blender generator and web viewer have not been implemented. There is no runnable website or generated model yet.
+**Status: implemented.** The reproducible Blender generator, GLB validation, React/Three.js viewer and deterministic educational data are implemented. Browser acceptance covers all five milestones; learner comprehension and target-laptop performance remain unmeasured. The viewer includes contextual camera navigation, optional computation-flow animation, and a worked RMSNorm drill-down from vector to scalar channel. See [build instructions](docs/development.md) and [verified progress](docs/progress.md) for commands, evidence and remaining limitations.
 
 ## Start here
 
@@ -141,9 +141,7 @@ explicitly pausing the agent is separate from pausing the tour. Follow the
 [steering protocol](docs/agent-workflow.md#human-steering-during-autonomous-work).
 Bind the preview server to `0.0.0.0`, publish a verified LAN address with its
 actual startup port, and verify asset loading from the laptop when possible.
-Keep actual addresses and machine details in ignored private context. These
-controls are planned for milestone 2 and are not part of the public exhibit
-interface by default.
+Keep actual addresses and machine details in ignored private context. The development preview enables these controls; ordinary production builds omit them.
 
 ## Shared data and repository layout
 
@@ -154,23 +152,23 @@ AGENTS.md                # Agent entrypoint and project workflow
 .gitignore
 shared/
   model-spec.json        # Initial architectural and visualization preset
-blender/                 # Future procedural Python generator
+blender/                 # Procedural Python generator
 web/
-  src/                   # Future React/TypeScript viewer
+  src/                   # React/TypeScript viewer
   public/models/         # Generated web assets
-scripts/                 # Future build and validation commands
+scripts/                 # Build, preview and validation commands
 docs/                    # Plan, workflow, storyboard, original prompt archive
 ```
 
-Tracked .gitkeep files preserve empty starter directories. Future files named in the prompt are a plan, not implemented modules.
+Generated assets and browser evidence remain ignored. See the development guide for build commands and the progress record for acceptance status.
 
-Keep architecture values distinct from display limits in JSON. Both generation and viewer should validate a versioned schema. Put explanatory text in `shared/component-descriptions.json` when implemented. Add tour data separately from architectural facts.
+Keep architecture values distinct from display limits in JSON. Both generation and viewer should validate a versioned schema. Explanatory text lives in `shared/component-descriptions.json`; `shared/chapters.json` keeps tour data separate from architectural facts.
 
 Future presets may cover dense Llama-like models, Qwen MoE, or DeepSeek variants. Some architectures require new components or different graph structure; a JSON switch alone cannot express every architectural change. A later Hugging Face config importer should support an explicit set of mappings and reject unsupported features.
 
 ## Performance and accessibility goals
 
-These are proposed acceptance targets, not measured results:
+These are acceptance targets; measured results and client limitations are recorded in `docs/progress.md`:
 
 - Initial GLB substantially below 10 MB where practical.
 - Aim for 60 fps on a representative desktop and at least 30 fps in a reduced-quality mode, with hardware, browser, viewport, and pixel ratio recorded.
