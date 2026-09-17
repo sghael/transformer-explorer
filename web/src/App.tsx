@@ -94,10 +94,10 @@ function explainShape(selection: Selection, decode: boolean): ShapeExplanation {
     layer: {
       title: `Layer ${layer}: residual stream`,
       kind: "Activations and operations",
-      role: "The connecting path carries a token vector. Open normalization frames and attention or expert processing modify it; each + junction adds a bypassed vector.",
+      role: "The solid connecting path carries a token vector. Open normalization frames and attention or expert processing modify it; each + junction adds a bypassed vector.",
       dimensions: `${hidden} channels enter and leave each sublayer. Both residual additions preserve this width.`,
       arrangement:
-        "Attention groups and expert alternatives separate in depth within this one layer.",
+        "Attention groups and expert alternatives separate in depth within this one layer. The dashed line links the selected stack slice to this expanded view; it represents magnification.",
     },
     attention: {
       title: `Group ${selection.group + 1}: Q / K / V projections`,

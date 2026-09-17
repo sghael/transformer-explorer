@@ -1,7 +1,7 @@
 import * as THREE from "three";
 export type CameraPose = { position: number[]; target: number[] };
-export const timing = { out: 0.85, context: 0.35, into: 1.25 };
-export const duration = timing.out + timing.context + timing.into;
+export const timing = { out: 0.7, context: 1, aim: 0.7, into: 1.3 };
+export const duration = timing.out + timing.context + timing.aim + timing.into;
 export const ease = (t: number) => {
   const x = THREE.MathUtils.clamp(t, 0, 1);
   return x * x * x * (10 + x * (-15 + 6 * x));
@@ -43,12 +43,7 @@ export function resetOpacity(scene: THREE.Object3D) {
     }
   });
 }
-export function blendScene(
-  from: ScenePose,
-  to: ScenePose,
-  progress: number,
-  approaching = false,
-) {
+export function blendScene(from: ScenePose, to: ScenePose, progress: number) {
   const u = ease(progress);
   from.forEach((start, object) => {
     const end = to.get(object)!;
@@ -59,11 +54,7 @@ export function blendScene(
     object.scale.lerpVectors(a.scale, b.scale, u);
     object.visible = true;
     if (object instanceof THREE.Mesh) {
-      const fade =
-        approaching && end.alpha < start.alpha
-          ? ease((progress - 0.35) / 0.65)
-          : u;
-      const alpha = THREE.MathUtils.lerp(start.alpha, end.alpha, fade);
+      const alpha = THREE.MathUtils.lerp(start.alpha, end.alpha, u);
       const material = object.material as THREE.Material;
       const transparent = alpha < 0.999;
       if (material.transparent !== transparent) {
@@ -100,5 +91,25 @@ export function cameraBetween(
   return {
     position: target.clone().addScaledVector(direction, distance).toArray(),
     target: target.toArray(),
+  };
+}
+
+/** Aim from a distance first; the subsequent dolly keeps heading and target fixed. */
+export function approachPose(
+  wide: CameraPose,
+  destination: CameraPose,
+): CameraPose {
+  const target = new THREE.Vector3(...destination.target);
+  const offset = new THREE.Vector3(...destination.position).sub(target);
+  const wideDistance = new THREE.Vector3(...wide.position).distanceTo(
+    new THREE.Vector3(...wide.target),
+  );
+  const distance = Math.max(wideDistance, offset.length() * 1.4);
+  return {
+    target: target.toArray(),
+    position: target
+      .clone()
+      .addScaledVector(offset.normalize(), distance)
+      .toArray(),
   };
 }
