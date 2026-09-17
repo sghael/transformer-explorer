@@ -50,3 +50,5 @@ See progress.md for checks actually performed and remaining acceptance work. Gen
 With `PREVIEW_URL` set, run `node web/browser-checks.mjs` for the full acceptance suite and `node web/semantic-check.mjs` for wheel-driven semantic zoom. Run `node web/review-checks.mjs` for semantic mesh picking, paused computation, and presentation-context regressions. Run `node web/deep-checks.mjs` for contextual navigation, animated flow and scalar RMSNorm inspection. Install the pinned test browser once with `web/node_modules/.bin/playwright install chromium`. The suite captures actual browser views, checks interaction state, and records software-rendering diagnostics separately from human learning evidence.
 
 Run `npm --prefix web run format:check` before committing. The repository uses its tracked `.githooks/pre-commit` privacy hook rather than a Lefthook configuration.
+
+Run `node web/navigation-checks.mjs` with `PREVIEW_URL` set to verify frame-by-frame contextual navigation. It captures transition videos and checks that surrounding landmarks survive early inward motion and that the destination remains visible. This complements endpoint and settled-camera assertions.

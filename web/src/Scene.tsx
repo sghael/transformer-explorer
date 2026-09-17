@@ -18,6 +18,15 @@ import {
   type Point,
 } from "./spatial";
 import Flow from "./Flow";
+import {
+  timing,
+  duration,
+  cameraBetween,
+  captureScene,
+  blendScene,
+  resetOpacity,
+  type ScenePose,
+} from "./navigation";
 export type Selection = {
   layer: number;
   group: number;
@@ -572,7 +581,7 @@ function Model(p: Props) {
   const { camera, gl, size, scene: renderScene } = useThree();
   const destination = useRef<CameraPose | null>(null);
   const moving = useRef(false);
-  const [presentationView, setPresentationView] = useState<View | null>(null);
+  const [presentationView, setPresentationView] = useState<View>(p.state.view);
   const navigation = useRef<{
     elapsed: number;
     from: CameraPose;
@@ -581,8 +590,11 @@ function Model(p: Props) {
     context: View;
     target: View;
     phase: string;
+    outgoing: ScenePose;
+    surroundings: ScenePose;
+    incoming: ScenePose;
   } | null>(null);
-  const visibleView = presentationView ?? p.state.view;
+  const visibleView = presentationView;
   const viewPoses = useRef(new Map<string, CameraPose>());
   const previousView = useRef<{ key: string; revision: number } | null>(null);
   const nodes = useMemo(() => {
@@ -602,9 +614,9 @@ function Model(p: Props) {
     [values, p.state.token],
   );
   useEffect(() => () => texture.dispose(), [texture]);
-  useLayoutEffect(() => {
-    const view = visibleView,
-      overview = ["overview", "input", "output"].includes(view),
+  function applySceneView(view: View) {
+    resetOpacity(scene);
+    const overview = ["overview", "input", "output"].includes(view),
       detail = ["attention", "cache", "matrix"].includes(view);
     scene.traverse((o) => {
       o.visible = true;
@@ -708,6 +720,9 @@ function Model(p: Props) {
     material.color.set("#ffffff");
     material.needsUpdate = true;
     scene.updateMatrixWorld(true);
+  }
+  useLayoutEffect(() => {
+    if (!navigation.current) applySceneView(visibleView);
   }, [scene, nodes, p.state, p.top2, texture, visibleView]);
   useEffect(() => {
     const viewKey =
@@ -749,7 +764,21 @@ function Model(p: Props) {
           ? "overview"
           : "layer";
         const scale = Math.max(1, 1.6 / (size.width / size.height));
+        const outgoing = captureScene(scene);
+        applySceneView(context);
+        const surroundings = captureScene(scene);
+        applySceneView(p.state.view);
+        const incoming = captureScene(scene);
+        // Reveal destination detail while still wide, before approaching it.
+        incoming.forEach((pose, object) => {
+          if (pose.alpha > 0 && surroundings.get(object)!.alpha === 0)
+            surroundings.set(object, pose);
+        });
+        blendScene(outgoing, surroundings, 0);
         navigation.current = {
+          outgoing,
+          surroundings,
+          incoming,
           elapsed: 0,
           phase: "zoom-out",
           context,
@@ -764,10 +793,13 @@ function Model(p: Props) {
               : { position: [5, 10, 23 * scale], target: [0, 0.6, 0] },
           to: pose,
         };
+        controls.current.enabled = false;
         setPresentationView(fromView);
       } else {
         navigation.current = null;
-        setPresentationView(null);
+        applySceneView(p.state.view);
+        if (controls.current) controls.current.enabled = !p.playing;
+        setPresentationView(p.state.view);
       }
     };
     if (forced) viewPoses.current.clear();
@@ -831,7 +863,9 @@ function Model(p: Props) {
   useEffect(() => {
     if (p.restorePose) {
       navigation.current = null;
-      setPresentationView(null);
+      applySceneView(p.state.view);
+      if (controls.current) controls.current.enabled = !p.playing;
+      setPresentationView(p.state.view);
       destination.current = p.restorePose;
       moving.current = true;
     }
@@ -872,30 +906,37 @@ function Model(p: Props) {
       const route = navigation.current;
       route.elapsed += dt;
       const t = route.elapsed;
-      const phase = t < 0.45 ? "zoom-out" : t < 0.6 ? "context" : "zoom-in";
+      const inwardStart = timing.out + timing.context;
+      const phase =
+        t < timing.out ? "zoom-out" : t < inwardStart ? "context" : "zoom-in";
       if (phase !== route.phase) {
         route.phase = phase;
-        setPresentationView(phase === "context" ? route.context : route.target);
+        // Retain the layer/model presentation throughout the approach.
+        setPresentationView(route.context);
       }
-      const start = t < 0.6 ? route.from : route.via;
-      const end = t < 0.6 ? route.via : route.to;
-      const linear =
-        t < 0.6 ? Math.min(1, t / 0.45) : Math.min(1, (t - 0.6) / 0.45);
-      const u = linear * linear * (3 - 2 * linear);
-      camera.position.lerpVectors(
-        new THREE.Vector3(...start.position),
-        new THREE.Vector3(...end.position),
-        u,
+      const inward = t >= inwardStart;
+      const progress = inward
+        ? (t - inwardStart) / timing.into
+        : t / timing.out;
+      const pose = cameraBetween(
+        inward ? route.via : route.from,
+        inward ? route.to : route.via,
+        progress,
       );
-      controls.current.target.lerpVectors(
-        new THREE.Vector3(...start.target),
-        new THREE.Vector3(...end.target),
-        u,
+      blendScene(
+        inward ? route.surroundings : route.outgoing,
+        inward ? route.incoming : route.surroundings,
+        progress,
+        inward,
       );
+      camera.position.set(...(pose.position as Point));
+      controls.current.target.set(...(pose.target as Point));
       controls.current.update();
-      if (t >= 1.05) {
+      if (t >= duration) {
         navigation.current = null;
-        setPresentationView(null);
+        setPresentationView(route.target);
+        applySceneView(route.target);
+        controls.current.enabled = !p.playing;
         moving.current = false;
       }
     } else if (controls.current && moving.current && destination.current) {
@@ -957,6 +998,7 @@ function Model(p: Props) {
       selected: { ...p.state },
       presentedView: visibleView,
       navigationPhase: navigation.current?.phase ?? "settled",
+      navigationElapsed: navigation.current?.elapsed ?? 0,
       expandedCount: nodes.get("focus")?.visible ? 1 : 0,
       decode: p.decode,
       flowTime: p.flowTime,
@@ -1038,6 +1080,10 @@ function Model(p: Props) {
               position: o.position.toArray(),
               world: world.toArray(),
               visible,
+              opacity:
+                o instanceof THREE.Mesh
+                  ? (o.material as THREE.Material).opacity
+                  : 1,
               semantic: o.userData,
               screen: [
                 rect.left + ((screen.x + 1) * rect.width) / 2,
@@ -1074,7 +1120,7 @@ function Model(p: Props) {
       />
       <OrbitControls
         ref={controls}
-        enabled={!p.playing && presentationView === null}
+        enabled={!p.playing && !navigation.current}
         makeDefault
         minDistance={0.7}
         maxDistance={65}
