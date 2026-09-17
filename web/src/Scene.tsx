@@ -9,7 +9,7 @@ import {
 import { Canvas, events, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, useGLTF, Line, Html } from "@react-three/drei";
 import * as THREE from "three";
-import type { OrbitControls as Controls } from "three-stdlib";
+import type { OrbitControls as Controls, Line2 } from "three-stdlib";
 import { sample, type View } from "./data";
 import {
   routerPaths,
@@ -22,6 +22,7 @@ import {
   timing,
   duration,
   cameraBetween,
+  approachPose,
   captureScene,
   blendScene,
   resetOpacity,
@@ -156,6 +157,68 @@ function heatmap(values: number[][], token: number) {
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
+}
+
+function LayerOrigin({
+  nodes,
+  layer,
+}: {
+  nodes: Map<string, THREE.Object3D>;
+  layer: number;
+}) {
+  const line = useRef<Line2>(null);
+  const a = useMemo(() => new THREE.Vector3(), []);
+  const b = useMemo(() => new THREE.Vector3(), []);
+  useFrame(() => {
+    const source = nodes.get(`layer_${layer}`)!;
+    const focus = nodes.get("focus")!;
+    source.getWorldPosition(a);
+    focus.localToWorld(b.set(-9, 0, 0));
+    if (line.current) {
+      line.current.visible =
+        isVisibleInScene(source) &&
+        isVisibleInScene(focus) &&
+        focus.scale.x > 0.061;
+      line.current.geometry.setPositions([
+        a.x,
+        a.y,
+        a.z,
+        b.x - 0.5,
+        a.y,
+        a.z,
+        b.x - 0.5,
+        b.y,
+        a.z,
+        b.x - 0.5,
+        b.y,
+        b.z,
+        b.x,
+        b.y,
+        b.z,
+      ]);
+      line.current.computeLineDistances();
+    }
+  });
+  return (
+    <>
+      <Line
+        ref={line}
+        name="layer-origin"
+        points={[
+          [0, 0, 0],
+          [0, 0, 0],
+        ]}
+        color="#f3c779"
+        lineWidth={2}
+        dashed
+        dashSize={0.15}
+        gapSize={0.1}
+      />
+      <Label node={nodes.get(`layer_${layer}`)} offset={[0, -1.1, 0]}>
+        Layer {layer + 1} in the stack
+      </Label>
+    </>
+  );
 }
 // One absolute journey: chapter seeking never repeats a within-chapter loop.
 function tokenPose(time: number, spacing: number, layer: number): Point {
@@ -579,6 +642,16 @@ function Model(p: Props) {
   const controls = useRef<Controls>(null);
   const lastPick = useRef<Record<string, any> | null>(null);
   const { camera, gl, size, scene: renderScene } = useThree();
+  useEffect(() => {
+    (window as any).__explorerInspect = () => ({
+      camera,
+      scene: renderScene,
+      gl,
+    });
+    return () => {
+      delete (window as any).__explorerInspect;
+    };
+  }, [camera, renderScene, gl]);
   const destination = useRef<CameraPose | null>(null);
   const moving = useRef(false);
   const [presentationView, setPresentationView] = useState<View>(p.state.view);
@@ -586,6 +659,7 @@ function Model(p: Props) {
     elapsed: number;
     from: CameraPose;
     via: CameraPose;
+    approach: CameraPose;
     to: CameraPose;
     context: View;
     target: View;
@@ -660,6 +734,8 @@ function Model(p: Props) {
         );
     });
     const focus = nodes.get("focus")!;
+    focus.position.set(0, 0, 0);
+    focus.scale.setScalar(1);
     for (const child of focus.children) {
       const id = child.userData.id;
       if (detail) child.visible = id === "attention";
@@ -691,8 +767,8 @@ function Model(p: Props) {
     stack.visible = overview || view === "layer";
     stack.position.set(
       view === "layer" ? -11 : 0,
-      view === "layer" ? -1 : 0,
-      0,
+      view === "layer" ? -2 : 0,
+      view === "layer" ? 4 : 0,
     );
     stack.scale.setScalar(view === "layer" ? 0.3 : 1);
     const line = nodes.get("stack_sequence_segment_0");
@@ -769,12 +845,27 @@ function Model(p: Props) {
         const surroundings = captureScene(scene);
         applySceneView(p.state.view);
         const incoming = captureScene(scene);
-        // Reveal destination detail while still wide, before approaching it.
-        incoming.forEach((pose, object) => {
-          if (pose.alpha > 0 && surroundings.get(object)!.alpha === 0)
-            surroundings.set(object, pose);
-        });
+        // The expanded layer grows from the selected slice while the camera is
+        // wide. Its miniature source stack stays connected to it afterwards.
+        if (context === "overview" && p.state.view === "layer") {
+          const selected = nodes.get(`layer_${p.state.layer}`)!;
+          const selectedPose = outgoing.get(selected)!;
+          const focus = nodes.get("focus")!;
+          incoming.forEach((pose, object) => {
+            if (pose.alpha > 0 && surroundings.get(object)!.alpha === 0)
+              surroundings.set(object, { ...pose, alpha: 0 });
+          });
+          surroundings.set(focus, {
+            position: selectedPose.position.clone(),
+            scale: new THREE.Vector3(0.06, 0.06, 0.06),
+            alpha: 1,
+          });
+        }
         blendScene(outgoing, surroundings, 0);
+        const via =
+          context === "overview"
+            ? { position: [17, 15, 22 * scale], target: [0, 0, 0] }
+            : { position: [5, 10, 23 * scale], target: [0, 0.6, 0] };
         navigation.current = {
           outgoing,
           surroundings,
@@ -787,10 +878,8 @@ function Model(p: Props) {
             position: camera.position.toArray(),
             target: controls.current.target.toArray(),
           },
-          via:
-            context === "overview"
-              ? { position: [17, 15, 22 * scale], target: [0, 0, 0] }
-              : { position: [5, 10, 23 * scale], target: [0, 0.6, 0] },
+          via,
+          approach: approachPose(via, pose),
           to: pose,
         };
         controls.current.enabled = false;
@@ -906,29 +995,48 @@ function Model(p: Props) {
       const route = navigation.current;
       route.elapsed += dt;
       const t = route.elapsed;
-      const inwardStart = timing.out + timing.context;
+      const aimStart = timing.out + timing.context;
+      const inwardStart = aimStart + timing.aim;
       const phase =
-        t < timing.out ? "zoom-out" : t < inwardStart ? "context" : "zoom-in";
+        t < timing.out
+          ? "zoom-out"
+          : t < aimStart
+            ? "context"
+            : t < inwardStart
+              ? "aim"
+              : "zoom-in";
       if (phase !== route.phase) {
         route.phase = phase;
-        // Retain the layer/model presentation throughout the approach.
-        setPresentationView(route.context);
+        // All labels and overlays are in place before the inward flight starts.
+        setPresentationView(t < aimStart ? route.context : route.target);
       }
-      const inward = t >= inwardStart;
-      const progress = inward
-        ? (t - inwardStart) / timing.into
-        : t / timing.out;
-      const pose = cameraBetween(
-        inward ? route.via : route.from,
-        inward ? route.to : route.via,
-        progress,
-      );
-      blendScene(
-        inward ? route.surroundings : route.outgoing,
-        inward ? route.incoming : route.surroundings,
-        progress,
-        inward,
-      );
+      let pose: CameraPose;
+      if (t < timing.out) {
+        pose = cameraBetween(route.from, route.via, t / timing.out);
+        blendScene(route.outgoing, route.surroundings, t / timing.out);
+      } else if (t < aimStart) {
+        pose = route.via;
+        blendScene(
+          route.surroundings,
+          route.incoming,
+          (t - timing.out) / timing.context,
+        );
+      } else {
+        // Geometry, opacity and annotations stop changing before aiming/zooming.
+        blendScene(route.incoming, route.incoming, 1);
+        pose =
+          t < inwardStart
+            ? cameraBetween(
+                route.via,
+                route.approach,
+                (t - aimStart) / timing.aim,
+              )
+            : cameraBetween(
+                route.approach,
+                route.to,
+                (t - inwardStart) / timing.into,
+              );
+      }
       camera.position.set(...(pose.position as Point));
       controls.current.target.set(...(pose.target as Point));
       controls.current.update();
@@ -1078,6 +1186,7 @@ function Model(p: Props) {
             id,
             {
               position: o.position.toArray(),
+              scale: o.getWorldScale(new THREE.Vector3()).toArray(),
               world: world.toArray(),
               visible,
               opacity:
@@ -1118,6 +1227,9 @@ function Model(p: Props) {
         p={{ ...p, state: { ...p.state, view: visibleView } }}
         nodes={nodes}
       />
+      {visibleView === "layer" && (
+        <LayerOrigin nodes={nodes} layer={p.state.layer} />
+      )}
       <OrbitControls
         ref={controls}
         enabled={!p.playing && !navigation.current}
