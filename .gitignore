@@ -8,6 +8,10 @@
 Thumbs.db
 .idea/
 .vscode/
+# Isolated agent worktrees
+.worktrees/
+.claude/worktrees/
+.codex-worktrees/
 *.swp
 *~
 

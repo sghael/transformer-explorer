@@ -1,794 +1,89 @@
-You are acting as a senior technical artist, Blender Python developer,
-ML architecture expert, and WebGL/Three.js engineer.
-
-We are going to build an interactive 3D educational visualization of a
-modern decoder-only Transformer LLM.
-
-The project must be reproducible, source controlled, procedurally generated,
-and suitable for eventual deployment as a static website.
-
-Do not simply create a pretty diagram. Build an interactive explanatory
-system.
-
-=====================================================================
-GOAL
-=====================================================================
-
-Create a 3D visualization of a modern Transformer LLM that lets a user:
-
-1. See the complete architecture from input tokens to next-token output.
-2. Orbit, pan, and zoom freely with a mouse.
-3. Click individual architectural components and inspect them.
-4. Select any Transformer layer.
-5. Expand one Transformer layer into its internal structure without having
-   to physically display the internals of every repeated layer.
-6. Zoom progressively deeper into attention, GQA, RoPE, KV cache,
-   normalization, residual connections, and Mixture-of-Experts routing.
-7. Press Play to experience a predetermined guided tour through the model.
-8. Pause, scrub, go forward/backward by chapter, and then freely explore.
-9. See animated tokens flowing through the architecture.
-10. Understand autoregressive next-token generation.
-
-The visualization should work both as:
-    A. an interactive 3D model
-    B. a deterministic guided presentation
-
-The guided presentation is NOT a rendered video. Everything remains live 3D.
-
-=====================================================================
-REFERENCE ARCHITECTURE
-=====================================================================
-
-Use Mixtral 8x7B as the initial architectural preset because it provides
-a compact, understandable example of a modern decoder-only MoE Transformer.
-
-Use these architectural parameters as the initial source of truth:
-
-model_name = "Mixtral 8x7B educational preset"
-num_layers = 32
-hidden_size = 4096
-intermediate_size = 14336
-attention_heads = 32
-kv_heads = 8
-head_dim = 128
-experts = 8
-experts_per_token = 2
-vocab_size = 32000
-
-Architecture of each decoder layer:
-
-residual stream
-  -> RMSNorm
-  -> self attention
-       -> Q projection
-       -> K projection
-       -> V projection
-       -> grouped-query attention: 32 Q heads / 8 KV heads
-       -> RoPE applied to Q/K
-       -> causal attention
-       -> output projection
-  -> residual add
-  -> RMSNorm
-  -> sparse MoE
-       -> router
-       -> scores for 8 experts
-       -> top-2 expert selection per token
-       -> selected expert MLPs
-       -> weighted recombination
-  -> residual add
-
-After all decoder layers:
-
-final RMSNorm
--> language model head
--> logits
--> next token selection
--> append selected token
--> repeat autoregressively
-
-Do NOT imply that every modern LLM has this exact architecture.
-Describe this as a representative modern decoder Transformer and identify
-Mixtral as the initial preset.
-
-Routing values and attention weights used in the animation are illustrative,
-not values extracted from actual Mixtral weights.
-
-=====================================================================
-CORE DESIGN PRINCIPLE: SEMANTIC ZOOM
-=====================================================================
-
-Do not make 32 giant Transformer blocks arranged in a huge line.
-
-Instead create a compact "layer spine":
-
-[Layer 1]
-[Layer 2]
-[Layer 3]
-...
-[Layer 32]
-
-All 32 layers should exist visually as thin repeated layer slices.
-
-They should look like a compressed stack/book/spine.
-
-Only ONE selected layer at a time expands into detailed internal geometry.
-
-Selecting Layer N should:
-
-compress/de-emphasize the other layers
-move Layer N into a focus position
-open/explode Layer N into:
-    RMSNorm
-    Attention
-    Residual connection
-    RMSNorm
-    MoE
-    Residual connection
-
-Internally reuse the same detailed geometry for all layers where possible.
-
-The user must still perceive that 32 distinct sequential layers exist.
-
-Support three conceptual Levels of Detail:
-
-LOD 0:
-    complete model
-    token input
-    32-layer stack
-    final output
-
-LOD 1:
-    one decoder layer
-    residual stream
-    attention section
-    MoE section
-    normalizations
-
-LOD 2:
-    Q/K/V
-    GQA grouping
-    RoPE
-    attention weights
-    KV cache
-    router logits
-    top-k routing
-    expert MLP internals
-    weighted expert recombination
-
-Objects should carry metadata identifying their LOD.
-
-=====================================================================
-VISUAL LANGUAGE
-=====================================================================
-
-Make the scene look like a sophisticated technical museum exhibit rather
-than a PowerPoint diagram.
-
-Use simple geometry, high visual hierarchy, mild transparency, emissive
-accents, clean materials, rounded geometry where appropriate, and a dark
-neutral environment.
-
-The computational flow must always be visually legible.
-
-Create a continuous central visual metaphor for the RESIDUAL STREAM.
-It should visually pass through the entire Transformer.
-
-Residual bypass paths should visibly go around attention and MoE blocks and
-return at addition nodes.
-
-RMSNorm should appear as a thin processing gate/ring rather than a huge block.
-
-Use shape and spatial position as well as color to distinguish concepts so
-the visualization is not dependent on color alone.
-
-Do not model literal individual parameters.
-
-Represent weight matrices as abstract matrix slabs/panels containing subtle
-grid patterns.
-
-When useful, expose their mathematical dimensions in the web UI.
-
-=====================================================================
-ATTENTION VISUALIZATION
-=====================================================================
-
-When the tour enters Attention:
-
-Split an activation into Q, K, and V paths.
-
-Show the distinction between:
-    32 query heads
-    8 key/value heads
-
-Visually group four Q heads around each KV head group so GQA becomes obvious
-without displaying 32 enormous independent objects.
-
-Show RoPE as a transformation of Q/K using an intuitive twisting/rotation
-motion or geometric motif.
-
-Show causal attention across a short illustrative sequence, approximately
-6-10 tokens.
-
-Use lines/arcs whose intensity represents illustrative attention weight.
-
-Clearly prevent future-token attention using a causal-mask visual.
-
-Include a KV CACHE beside the attention module.
-
-During the autoregressive animation:
-    append new K/V entries to the cache
-    make it obvious that previous K/V states are reused
-
-Do not attempt to visualize all 32k possible context positions.
-
-=====================================================================
-MIXTURE OF EXPERTS VISUALIZATION
-=====================================================================
-
-This should be one of the most memorable parts of the experience.
-
-Create a Router at the center of the MoE section.
-
-Arrange eight Experts around it spatially.
-
-When a token reaches the router:
-
-show eight illustrative routing scores
-identify the two highest
-highlight exactly those two experts
-send token representations down two distinct paths
-process them independently
-return the results
-weight the returned paths according to routing probability
-recombine them
-send the combined activation back to the residual stream
-
-Use several example tokens in the demonstration and deliberately give them
-different illustrative expert choices so users understand that routing is
-token-dependent.
-
-Label this data as illustrative routing.
-
-Inside an expert, support a deeper zoom showing the feed-forward computation
-as abstract Gate/Up/Down projection matrix slabs with SiLU/SwiGLU-like
-computation represented conceptually.
-
-Do not expand all eight experts internally simultaneously.
-Expand whichever expert the user clicks.
-
-=====================================================================
-AUTOREGRESSIVE STORY
-=====================================================================
-
-Use a short illustrative prompt, for example:
-
-"The transformer predicts"
-
-Token objects should enter the network.
-
-The guided sequence should eventually reach the language-model head,
-show a small illustrative list of candidate next tokens/logits,
-choose one candidate,
-append it to the sequence,
-and briefly demonstrate that the newly appended token becomes the next input.
-
-Do not present fake probabilities as real model inference.
-Mark all demonstration values as illustrative.
-
-=====================================================================
-GUIDED TOUR
-=====================================================================
-
-Implement an explicit chapter-based tour.
-
-The initial chapters should conceptually be:
-
-Overview
-Input tokens
-Token embeddings
-Transformer layer stack
-Expand one layer
-RMSNorm
-Q/K/V projection
-Grouped-query attention
-RoPE
-Causal attention
-KV cache
-Attention output + residual
-Second RMSNorm
-MoE router
-Top-2 expert selection
-Expert processing
-Weighted expert merge
-Residual output
-Collapse layer
-Propagation through remaining layers
-Final normalization
-LM head and logits
-Next-token selection
-Autoregressive loop
-Return to overview
-
-Do not hardcode the presentation in one giant function.
-
-Represent tour chapters as structured data.
-
-Each chapter should be capable of specifying:
-
-camera target
-camera position or camera anchor
-duration
-objects to emphasize
-objects to dim
-LOD to show
-animation/event to trigger
-caption/title
-optional educational explanation
-
-The timeline should be deterministic.
-
-Controls:
-
-Play
-Pause
-Restart
-Previous chapter
-Next chapter
-Timeline scrubber
-Playback speed
-Exit guided mode / Explore
-Reset camera
-
-If the user manipulates the camera while paused, preserve that behavior.
-Resuming the tour should smoothly transition back to the tour camera.
-
-=====================================================================
-CAMERA DESIGN
-=====================================================================
-
-Use cinematic but restrained camera movement.
-
-No excessive spinning.
-
-Create named camera anchors in Blender for important viewpoints, but control
-guided camera interpolation in the web application so the presentation can
-be interrupted and resumed interactively.
-
-Examples:
-
-CAM_OVERVIEW
-CAM_INPUT
-CAM_LAYER_STACK
-CAM_LAYER_EXPANDED
-CAM_ATTENTION
-CAM_GQA
-CAM_KV_CACHE
-CAM_MOE
-CAM_ROUTER
-CAM_EXPERT
-CAM_LM_HEAD
-
-The web app can interpolate between these transforms.
-
-=====================================================================
-BLENDER IMPLEMENTATION
-=====================================================================
-
-Use Blender primarily as a procedural asset generator.
-
-Do NOT rely on manual modeling as the source of truth.
-
-Build the scene using Python scripts and bpy.
-
-The project must be rebuildable from a clean Blender scene.
-
-Create reusable Python functions/classes for:
-
-materials
-rounded modules
-matrix slabs
-layer slices
-residual paths
-attention assembly
-expert assembly
-router assembly
-camera anchors
-animation poses
-metadata
-GLB export
-
-Prefer shared mesh data and GPU-instancing-compatible repeated geometry.
-
-Avoid thousands of independent high-poly objects.
-
-Keep geometry intentionally lightweight because the primary target is a web
-browser.
-
-Use Blender custom properties extensively.
-
-Example:
-
-object["component"] = "moe_router"
-object["layer"] = 0
-object["lod"] = 2
-object["interactive"] = True
-object["description_key"] = "moe.router"
-
-These properties must be exported into glTF extras.
-
-Give all important objects deterministic semantic names.
-
-Examples:
-
-MODEL_ROOT
-INPUT_TOKENS
-LAYER_STACK
-LAYER_00
-LAYER_01
-...
-LAYER_31
-FOCUS_LAYER
-RMSNORM_PRE
-ATTENTION_ROOT
-ATTN_Q
-ATTN_K
-ATTN_V
-ATTN_ROPE
-ATTN_GQA
-KV_CACHE
-ATTN_OUTPUT
-MOE_ROOT
-MOE_ROUTER
-EXPERT_00
-...
-EXPERT_07
-FINAL_NORM
-LM_HEAD
-
-Avoid baked 3D text except where absolutely necessary.
-
-Labels and long explanations should be rendered by the website.
-
-Export a binary .glb.
-
-=====================================================================
-WEB IMPLEMENTATION
-=====================================================================
-
-Create a static web application using:
-
-TypeScript
-React
-Three.js
-@react-three/fiber
-@react-three/drei
-
-Use Vite unless there is a compelling reason not to.
-
-The application must load the Blender-generated GLB.
-
-Implement:
-
-Orbit/pan/zoom controls
-object picking
-hover highlighting
-click-to-focus
-selected-component information panel
-semantic zoom
-LOD visibility
-layer selection
-guided tour
-timeline controls
-runtime token particles
-runtime route highlighting
-runtime attention lines
-runtime MoE routing
-camera interpolation
-
-Read component information from glTF node extras.
-
-Do not encode all semantic information through string parsing of mesh names.
-
-Names are for debugging.
-Metadata is the API.
-
-When a component is clicked, show a clean informational panel containing:
-
-component name
-architectural role
-relevant dimensions
-simple explanation
-optional simplified equation
-
-For example, Attention can show:
-
-Attention(Q,K,V) = softmax(QK^T / sqrt(d)) V
-
-MoE can show conceptually:
-
-router(x) -> top-k experts
-y = sum_i routing_weight_i * Expert_i(x)
-
-Use HTML/DOM for labels and information panels so text remains sharp.
-
-=====================================================================
-RUNTIME EFFECTS
-=====================================================================
-
-Prefer web-runtime animation for:
-
-token motion
-glowing routes
-material highlighting
-attention connection intensity
-router scores
-expert activation
-particle motion
-camera tour
-
-Use Blender/glTF transforms primarily for:
-
-static architecture
-exploded positions
-major component movement
-reusable animation poses where advantageous
-
-Do not depend on animated Blender materials exporting correctly.
-
-=====================================================================
-SOURCE-OF-TRUTH MODEL SPEC
-=====================================================================
-
-Create a shared machine-readable model specification.
-
-For example:
-
-shared/model-spec.json
-
-It should contain architecture parameters and visualization settings.
-
-Both Blender generation code and the website should consume this information
-where practical.
-
-The Blender scripts should not contain architectural magic numbers scattered
-throughout the code.
-
-Design this so another preset could later represent:
-
-a dense Llama-like model
-Qwen MoE
-DeepSeek-style MoE
-a custom research architecture
-
-without rewriting the viewer.
-
-=====================================================================
-REPOSITORY
-=====================================================================
-
-Initialize this project as a git repository.
-
-Suggested organization:
-
-transformer-3d/
-    README.md
-    .gitignore
-    shared/
-        model-spec.json
-        component-descriptions.json
-    blender/
-        build_scene.py
-        geometry.py
-        materials.py
-        transformer.py
-        animation.py
-        metadata.py
-        export.py
-    web/
-        package.json
-        src/
-        public/
-            models/
-    scripts/
-        build-all.sh
-    docs/
-        architecture.md
-        visual-language.md
-        storyboard.md
-
-You may adjust this structure if there is a concrete engineering reason.
-
-Treat Python/JSON/TypeScript as source of truth.
-
-The generated Blender file and GLB are artifacts.
-
-Keep the ability to reproduce them deterministically.
-
-If the GLB remains modest in size it may be checked into the repository for
-easy web deployment. Avoid introducing Git LFS unless it is actually needed.
-
-=====================================================================
-PERFORMANCE
-=====================================================================
-
-This is a web-first model.
-
-Keep polygon counts low.
-
-Use repeated meshes/instances.
-
-Do not make an individual mesh for every parameter, hidden dimension,
-attention coefficient, or token position.
-
-A desktop browser should render the visualization comfortably at interactive
-frame rates.
-
-Target an initial GLB substantially below 10 MB if practical.
-
-Use compression/optimization only after correctness is established.
-
-Do not compromise semantic node structure merely to save a few kilobytes.
-
-=====================================================================
-QUALITY BAR
-=====================================================================
-
-The experience should answer these questions visually:
-
-What enters an LLM?
-What is the residual stream?
-What does a Transformer layer contain?
-What are Q, K, and V?
-What is an attention head?
-What is grouped-query attention?
-What does RoPE do conceptually?
-Why is attention causal?
-What is a KV cache?
-What is a residual connection?
-What does RMSNorm do in the architecture?
-What is an MoE router?
-Why aren't all experts executed?
-How can different tokens use different experts?
-How are expert results recombined?
-Why are Transformer layers repeated?
-How does the final hidden state become a next-token prediction?
-Why does generation repeat autoregressively?
-
-Someone with basic ML knowledge should be able to understand these answers by
-exploring the visualization.
-
-=====================================================================
-DEVELOPMENT PROCESS
-=====================================================================
-
-First inspect the environment.
-
-Confirm:
-    Blender executable and version
-    Python environment
-    Node/npm/pnpm availability
-    git status
-    available Codex/agent capabilities
-
-Then initialize the repository.
-
-Before doing substantial implementation, create:
-
-docs/architecture.md
-docs/storyboard.md
-
-Document the proposed scene hierarchy and tour sequence.
-
-Then implement the smallest useful vertical slice:
-
-Blender:
-    input
-    compact layer stack
-    one expandable detailed Transformer block
-    attention
-    router
-    eight experts
-    output
-
-Export GLB.
-
-Web:
-    load model
-    orbit
-    zoom
-    picking
-    layer expansion
-    play a short camera tour
-
-Verify that entire end-to-end pipeline works before adding detail.
-
-Then incrementally add:
-    GQA
-    RoPE
-    KV cache
-    token animation
-    MoE routing
-    semantic zoom
-    full guided tour
-    educational panels
-
-Run Blender headlessly whenever possible so scene creation can be automated.
-
-Provide a single build command that regenerates the Blender asset and builds
-the website.
-
-Do not leave the project in a state where the Blender UI must be manually
-opened and edited for normal builds.
-
-=====================================================================
-VALIDATION
-=====================================================================
-
-Before declaring success:
-
-Regenerate the scene from scratch.
-
-Confirm GLB export succeeds.
-
-Confirm web production build succeeds.
-
-Open the application and verify:
-
-mouse orbit works
-mouse zoom works
-mouse pan works
-components can be clicked
-layer selection works
-one layer expands
-router can select two experts
-guided tour plays
-tour can pause
-tour can resume
-timeline can scrub
-camera can be manipulated in Explore mode
-labels remain readable
-no important browser-console errors exist
-
-Check rendering performance.
-
-Inspect the project for accidental duplicated geometry or excessive object
-counts.
-
-=====================================================================
-GIT
-=====================================================================
-
-Use git throughout the work.
-
-Make logical commits at meaningful milestones.
-
-Do not commit temporary caches, Blender autosaves, node_modules, rendered
-frames, or other build junk.
-
-At the end provide:
-
-git log --oneline --decorate -n 10
-git status
-commands needed to regenerate everything
-commands needed to run the local website
-
-=====================================================================
-IMPORTANT
-=====================================================================
-
-Prioritize architectural clarity over photorealism.
-
-Do not attempt to make a literal physical representation of 47 billion
-parameters.
-
-This is an explanatory spatial abstraction of computation.
-
-The central metaphor should remain:
-
-tokens moving through a residual stream,
-with attention gathering contextual information,
-MoE selectively invoking specialized compute,
-and repeated Transformer layers progressively transforming the representation.
-
-Begin by inspecting the installed environment and writing the architecture
-and storyboard documents. Then build the first end-to-end vertical slice.
+Build Transformer Explorer: an interactive educational exhibit of the Mixtral
+8x7B decoder architecture, generated in Blender and explored in a web browser.
+
+Read AGENTS.md, README.md, docs/project-plan.md, and docs/agent-workflow.md.
+The README defines the product requirements; shared/model-spec.json defines
+architectural dimensions. The project plan defines milestone acceptance.
+The archived original prompt is background, not an additional assignment.
+
+CURRENT SCOPE
+
+The repository contains a specification and scaffold. There is no implemented
+Blender generator or web viewer. Start with milestone 1 (design contracts),
+then build milestone 2 (one complete Blender-to-browser path). Continue to
+later milestones only when included in the user's requested goal.
+
+Inspect installed tools and verify their versions. Keep machine-specific
+findings in docs-private/. Record portable version requirements in public docs.
+Continue in this repository; it is already initialized.
+
+LEARNING CONTRACT
+
+A visitor should be able to trace a token through embeddings, a decoder layer,
+final normalization, output scores, and another generation step. They should
+understand the separate roles of contextual attention and per-token expert
+routing, the residual bypasses, and reuse of cached keys and values.
+
+Use the README's Mixtral-specific explanations and illustrative-data labels.
+Make all 32 layers selectable, expand one layer at a time, and preserve layer
+identity. Show four query heads per key/value group and two selected experts.
+Distinguish learned weights from runtime activations and cache entries.
+
+SPATIAL CONTRACT
+
+Follow the spatial deliverable contract in docs/project-plan.md. Use actual depth
+for the 32-layer stack and for inspecting grouped heads and parallel experts.
+Thin matrix sheets are appropriate; their grouping, axes, and connections must
+explain the computation. Do not confuse layer count with heads, tokens, or experts.
+
+Provide an oblique overview, adjustable stack spacing, layer extraction with a
+persistent stack locator, and a face-on matrix reading view. Keep layer/group/token
+selection synchronized across the 3D scene and readable HTML details. Prove the
+round trip from overview through one attention group and its matrix back to the
+same layer and overview. Preserve these states on narrow screens and with reduced
+motion. A perspective-styled flat diagram or prerecorded camera tour is not the
+spatial deliverable. Validate the untextured spatial slice before adding polish.
+
+Each camera stop needs one main learning objective, visible evidence, essential
+labels, a misconception to avoid, and a checkable acceptance criterion. Reveal
+mathematical detail on demand. Use an original wireframe or permissioned visual
+reference to establish layout before adding materials and effects.
+
+IMPLEMENTATION LOOP
+
+Use the project-configured model for the coordinator and every worker, with
+low/Light as the minimum effort, as required by AGENTS.md. Follow docs/agent-workflow.md for reasoning
+selection and delegation. Settle
+interfaces and acceptance criteria before assigning workers. Give each worker
+one bounded task with owned files and checks; retain integration and acceptance
+with the coordinator. Return diffs, test results, and artifact paths.
+
+Build from Python and JSON using Blender's background execution as the baseline.
+An available Blender MCP connection may help inspect a live scene; it is optional
+and must not become necessary to reproduce the build. Generate a structured
+scene report and diagnostic views. Inspect the exported asset in the browser.
+
+At each increment: build, validate structure, inspect the relevant browser view,
+correct the observed defect, and rerun affected checks. Escalate reasoning only
+when unresolved uncertainty warrants it. Summarize decisions and evidence;
+reasoning effort never replaces running code or looking at the result.
+
+Keep rendering primitives lightweight. The browser owns labels, tour timing,
+token motion, and camera control. Compute tour state from absolute time and a
+fixed seed so seeking works in both directions. Preserve Explore control while
+paused and blend back to the tour on resume.
+
+DONE FOR THE FIRST IMPLEMENTATION GOAL
+
+Milestones 1 and 2 in docs/project-plan.md pass: design contracts exist; a clean
+build creates a GLB and production viewer; all layer selections work; one layer
+expands; picking, orbit, and a short deterministic tour work; export metadata
+and representative browser views have been checked. The first slice includes
+stack spacing, one shared K/V group with four Q heads, linked matrix reading,
+and the spatial round trip. Capture two oblique views and verify the controls
+in the browser, including keyboard selection and the persistent locator. Record limitations honestly.
+
+Deliver the changed source, reproducible commands, reachable preview address,
+and concise evidence in docs/progress.md. Publish preview addresses using the
+host's supported helper and the server's actual startup port. Follow the existing
+privacy rules. A completed plan or successful export alone is not a working exhibit.

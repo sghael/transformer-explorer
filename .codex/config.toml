@@ -1,0 +1,7 @@
+# Current project model selection. Update both role defaults together.
+model = "gpt-6-astra"
+model_reasoning_effort = "medium"
+
+[agents]
+default_subagent_model = "gpt-6-astra"
+default_subagent_reasoning_effort = "low"
