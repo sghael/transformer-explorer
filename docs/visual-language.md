@@ -4,10 +4,10 @@ Original procedural schematics; no external artwork is used. Space represents co
 
 ## Overview
 
-Forward computation runs left to right. One enlarged open frame contains the representative layer, with First (1), Middle (16), and Last (32) examples. Labeled spans before and after it account for the remaining layers without repeating identical boxes. Their lengths are schematic. Depth separates parallel heads and experts inside the representative layer.
+Forward computation runs left to right. One enlarged open frame contains the representative layer, with First (1), Middle (16), and Last (32) examples. Paper-style ellipses (⋯) on the connecting spans denote omitted repetitions; adjacent counts account for the earlier and later layers. A zero-count span has no ellipsis. Their lengths are schematic. Depth separates parallel heads and experts inside the representative layer.
 
 ```text
-IDs → Embed → 15 earlier layers → [Layer 16] → 16 later layers → RMSNorm → LM head → ID
+IDs → Embed → ⋯ (15 earlier) → [Layer 16] → ⋯ (16 later) → RMSNorm → LM head → ID
     ↑                                                                  │
     └────────────────────── next decode step ───────────────────────────┘
 ```
