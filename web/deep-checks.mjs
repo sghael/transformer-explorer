@@ -178,7 +178,7 @@ try {
   await check(
     "Component navigation shows the wider layer before entering the next component",
     async () => {
-      await view("Attention group");
+      await view("Attention heads");
       const before = await scene();
       await button("Expert routing").click();
       await page.waitForFunction(
@@ -219,7 +219,7 @@ try {
     async () => {
       await view("Expert routing");
       const destination = await scene();
-      await view("Attention group");
+      await view("Attention heads");
       const before = await scene();
       await button("Expert routing").click();
       await page.waitForTimeout(100);
@@ -469,7 +469,7 @@ try {
   await check(
     "Expert flow remains inside the selected nested expert neighborhood",
     async () => {
-      await view("Inside an expert");
+      await view("Expert feed-forward network");
       const evidence = [];
       for (const time of [3, 9]) {
         await restoreFlow(time);
@@ -501,11 +501,14 @@ try {
     "RMSNorm inspection exposes a consistent vector-to-scalar calculation",
     async () => {
       await view("Inside a layer");
-      await button("Inspect RMSNorm").click();
+      await page
+        .getByRole("navigation", { name: "Component views" })
+        .getByRole("button", { name: "RMSNorm", exact: true })
+        .click();
       const panel = page.getByRole("region", { name: "RMSNorm inspection" });
       await button("Inspect activation vector").click();
       const values = await panel
-        .locator(".activation-channels button strong")
+        .locator(".rms-vector-table tbody tr td:nth-child(2)")
         .allTextContents();
       expect(values).toHaveLength(8);
       const inputs = values.map(Number);
@@ -522,9 +525,7 @@ try {
           .locator("strong")
           .textContent(),
       );
-      const epsilon = Number(
-        await cell("Illustrative stability constant ε").textContent(),
-      );
+      const epsilon = Number(await cell("Stability constant ε").textContent());
       const denominator = Number(
         await cell("Shared denominator").locator("strong").textContent(),
       );
@@ -557,7 +558,7 @@ try {
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.reload({ waitUntil: "networkidle" });
       await page.waitForFunction(() => window.__explorer?.ready);
-      await view("Attention group");
+      await view("Attention heads");
       const before = await scene();
       await button("Expert routing").click();
       await page.waitForTimeout(80);

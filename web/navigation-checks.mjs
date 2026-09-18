@@ -129,7 +129,7 @@ try {
         .getByLabel("Surroundings", { exact: true })
         .selectOption("full");
       await settle();
-      await button("Attention group").click();
+      await button("Attention heads").click();
       await page
         .getByLabel("Surroundings", { exact: true })
         .selectOption("full");
@@ -242,7 +242,7 @@ try {
   try {
     const evidence = [];
     for (const mode of ["overview-arrival", "same-view-seek"]) {
-      await button("Attention group").click();
+      await button("Attention heads").click();
       await settle();
       await button(
         mode === "overview-arrival" ? "Model overview" : "Inside a layer",

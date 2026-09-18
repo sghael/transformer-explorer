@@ -13,7 +13,7 @@ import type { OrbitControls as Controls } from "three-stdlib";
 import { sample, type View } from "./data";
 import { routerPaths, pointAlongPath, type Point } from "./spatial";
 import Flow from "./Flow";
-import { belongsToFocus } from "./context";
+import { belongsToFocus, type NormFocus } from "./context";
 import {
   FOCUS_SCALE,
   layerOrigin,
@@ -34,6 +34,7 @@ export type Selection = {
 };
 export type CameraPose = { position: number[]; target: number[] };
 type Props = {
+  normFocus?: NormFocus | null;
   contextMode: ContextMode;
   state: Selection;
   playing: boolean;
@@ -793,6 +794,21 @@ function Model(p: Props) {
   useLayoutEffect(() => {
     applySelectionLayout();
   }, [scene, nodes, p.state.layer, p.state.spacing, p.top2, texture]);
+  function normPose(id: NormFocus): CameraPose {
+    const object = nodes.get(id)!;
+    object.updateWorldMatrix(true, false);
+    const bounds = new THREE.Box3().setFromObject(object);
+    const target = bounds.getCenter(new THREE.Vector3());
+    const dimensions = bounds.getSize(new THREE.Vector3());
+    // Normalization disks face along X. Inspect the original face at its actual
+    // world scale, with a slight oblique angle that reveals the disk thickness.
+    const diameter = Math.max(dimensions.y, dimensions.z);
+    const offset = new THREE.Vector3(2.5, 0.7, 1.2).multiplyScalar(diameter);
+    return {
+      target: target.toArray(),
+      position: target.clone().add(offset).toArray(),
+    };
+  }
   function poseFor(view: View): CameraPose {
     const aspect = size.width / size.height;
     const distanceScale = Math.max(1, 1.6 / aspect);
@@ -844,7 +860,7 @@ function Model(p: Props) {
     };
   }
   useEffect(() => {
-    const viewKey = `${p.state.view}:${p.state.layer}:${p.state.group}:${p.state.expert}:${p.state.spacing}`;
+    const viewKey = `${p.state.view}:${p.state.layer}:${p.state.group}:${p.state.expert}:${p.state.spacing}:${p.normFocus ?? ""}`;
     const previous = previousView.current;
     const forced = previous?.revision !== p.cameraRevision;
     if (
@@ -864,9 +880,10 @@ function Model(p: Props) {
     if (forced) viewPoses.current.clear();
     previousView.current = { key: viewKey, revision: p.cameraRevision };
     if (!forced && !p.playing && previous?.key === viewKey) return;
-    const pose =
-      (!forced && !p.playing && viewPoses.current.get(viewKey)) ||
-      poseFor(p.state.view);
+    const pose = p.normFocus
+      ? normPose(p.normFocus)
+      : (!forced && !p.playing && viewPoses.current.get(viewKey)) ||
+        poseFor(p.state.view);
     destination.current = pose;
     moving.current = true;
     if (
@@ -902,6 +919,7 @@ function Model(p: Props) {
   }, [
     nodes,
     p.state.view,
+    p.normFocus,
     p.state.layer,
     p.state.group,
     p.state.expert,
@@ -1000,15 +1018,31 @@ function Model(p: Props) {
     }
     // Context recedes as the eye approaches, while the destination keeps its
     // material and world transform. Isolation is an explicit cutaway mode.
-    const detail = !["overview", "input", "output"].includes(p.state.view);
+    const detail =
+      !!p.normFocus || !["overview", "input", "output"].includes(p.state.view);
     const distance = camera.position.distanceTo(
       new THREE.Vector3(...layerOrigin(p.state.layer, p.state.spacing)),
     );
+    const normObject = p.normFocus ? nodes.get(p.normFocus) : undefined;
+    const normBounds = normObject
+      ? new THREE.Box3().setFromObject(normObject)
+      : null;
+    const normSize = normBounds?.getSize(new THREE.Vector3());
+    const normDistance =
+      normBounds && normSize
+        ? camera.position.distanceTo(
+            normBounds.getCenter(new THREE.Vector3()),
+          ) / Math.max(normSize.y, normSize.z)
+        : Infinity;
+    // Keep the parent graph visible while approaching the existing disk. Only
+    // cut away its surroundings once the eye reaches the disk's local scale.
     const strength =
-      detail && p.contextMode !== "full"
-        ? 1 - THREE.MathUtils.smoothstep(distance / FOCUS_SCALE, 30, 90)
-        : 0;
-    const contextKey = `${p.contextMode}:${p.state.view}:${p.state.group}:${p.state.expert}:${strength.toFixed(4)}`;
+      p.normFocus && p.contextMode !== "full"
+        ? 1 - THREE.MathUtils.smoothstep(normDistance, 4, 12)
+        : detail && p.contextMode !== "full"
+          ? 1 - THREE.MathUtils.smoothstep(distance / FOCUS_SCALE, 30, 90)
+          : 0;
+    const contextKey = `${p.contextMode}:${p.state.view}:${p.normFocus ?? ""}:${p.state.group}:${p.state.expert}:${strength.toFixed(4)}`;
     if (contextApplied.current !== contextKey) {
       const subdued = new THREE.Color("#101820");
       for (const [object, base] of contextBase.current) {
@@ -1017,6 +1051,7 @@ function Model(p: Props) {
           p.state.view,
           p.state.group,
           p.state.expert,
+          p.normFocus,
         );
         const hide = outside && strength > 0.95 && p.contextMode === "isolated";
         object.visible =
@@ -1034,7 +1069,8 @@ function Model(p: Props) {
         }
       }
       if (routes.current) {
-        const outside = !["layer", "router"].includes(p.state.view);
+        const outside =
+          !!p.normFocus || !["layer", "router"].includes(p.state.view);
         routes.current.visible = !(
           outside &&
           strength > 0.95 &&
@@ -1083,6 +1119,8 @@ function Model(p: Props) {
       "input",
       "embedding",
       "final_norm",
+      "norm1",
+      "norm2",
       "lm_head",
       "output",
       ...Array.from({ length: 8 }, (_, group) => `cache_link_${group}`),
@@ -1102,6 +1140,7 @@ function Model(p: Props) {
     (window as any).__explorerScene = {
       selected: { ...p.state },
       contextMode: p.contextMode,
+      normFocus: p.normFocus ?? null,
       presentedView: visibleView,
       navigationPhase: navigation.current?.phase ?? "settled",
       navigationElapsed: navigation.current?.elapsed ?? 0,
@@ -1201,7 +1240,7 @@ function Model(p: Props) {
           raycast={() => {}}
         />
       </group>
-      {(p.flowPlaying || p.flowTime > 0) && (
+      {!p.normFocus && (p.flowPlaying || p.flowTime > 0) && (
         <group
           position={
             ["overview", "input", "output"].includes(p.state.view)
@@ -1242,33 +1281,49 @@ function Model(p: Props) {
           }
         }}
       />
-      <AnnotationLevel
-        origin={layerOrigin(p.state.layer, p.state.spacing)}
-        near={
-          ["overview", "input", "output"].includes(p.state.view)
-            ? 0
-            : 90 * FOCUS_SCALE
-        }
-      >
-        <group
-          position={
-            layerOrigin(p.state.layer, p.state.spacing).map((v) => -v) as Point
+      {p.normFocus && (
+        <Label
+          node={nodes.get(p.normFocus)}
+          offset={[0, p.normFocus === "final_norm" ? 0.34 : 0.06, 0]}
+        >
+          {p.normFocus === "final_norm"
+            ? "Final RMSNorm"
+            : p.normFocus === "norm1"
+              ? "Attention RMSNorm"
+              : "Expert RMSNorm"}
+        </Label>
+      )}
+      {!p.normFocus && (
+        <AnnotationLevel
+          origin={layerOrigin(p.state.layer, p.state.spacing)}
+          near={
+            ["overview", "input", "output"].includes(p.state.view)
+              ? 0
+              : 90 * FOCUS_SCALE
           }
         >
-          <Effects
-            p={{
-              ...p,
-              state: {
-                ...p.state,
-                view: ["input", "output"].includes(p.state.view)
-                  ? p.state.view
-                  : "overview",
-              },
-            }}
-            nodes={nodes}
-          />
-        </group>
-      </AnnotationLevel>
+          <group
+            position={
+              layerOrigin(p.state.layer, p.state.spacing).map(
+                (v) => -v,
+              ) as Point
+            }
+          >
+            <Effects
+              p={{
+                ...p,
+                state: {
+                  ...p.state,
+                  view: ["input", "output"].includes(p.state.view)
+                    ? p.state.view
+                    : "overview",
+                },
+              }}
+              nodes={nodes}
+            />
+          </group>
+        </AnnotationLevel>
+      )}
       {(
         [
           ["layer", [0, 0.6, 0], 17, 100],
@@ -1284,7 +1339,7 @@ function Model(p: Props) {
           ["matrix", [-3.35, 1.45, (p.state.group - 3.5) * 1.2], 0, 3.5],
         ] as [View, Point, number, number][]
       )
-        .filter(([view]) => view === p.state.view)
+        .filter(([view]) => !p.normFocus && view === p.state.view)
         .map(([view, center, near, far]) => (
           <AnnotationLevel
             key={view}
@@ -1339,7 +1394,7 @@ function Model(p: Props) {
         maxDistance={150}
         onStart={() => (moving.current = false)}
         onEnd={() => {
-          if (p.playing || !controls.current) return;
+          if (p.playing || p.normFocus || !controls.current) return;
           const distance =
             camera.position.distanceTo(controls.current.target) /
             (p.state.view === "overview" ? 1 : FOCUS_SCALE);

@@ -6,7 +6,7 @@ import Scene, {
 } from "./Scene";
 import { flowDescription } from "./Flow";
 import { representativeLayers, representativeLayer } from "./layout";
-import { inspectRmsNorm } from "./inspection";
+import RmsNormPanel from "./RmsNormPanel";
 import EvidenceStrip, {
   ProbabilityBar,
   ProbabilityScale,
@@ -42,10 +42,10 @@ const labels: Record<View, string> = {
   overview: "Model overview",
   input: "Tokens & embeddings",
   layer: "Inside a layer",
-  attention: "Attention group",
+  attention: "Attention heads",
   cache: "KV cache",
   router: "Expert routing",
-  expert: "Inside an expert",
+  expert: "Expert feed-forward network",
   matrix: "Read attention matrix",
   output: "Output & generation",
 };
@@ -57,7 +57,7 @@ const explanations: Record<View, string> = {
   layer:
     "The residual stream carries the current representation around each sublayer. RMSNorm rescales the representation before attention and before the expert network. Each sublayer output is added to its bypass.",
   attention:
-    "Queries ask which earlier positions are useful. Keys determine the match; values supply the information to combine. Four query heads share one key/value head pair. Each query head has its own learned projection.",
+    "This view shows four attention heads in one grouped-query attention (GQA) group. Each has its own query projection; all four share one key and one value projection. Query–key matches determine the attention weights used to combine values. Mixtral has 32 query heads arranged in eight such groups.",
   cache:
     "Prefill stores keys and values for the prompt in each layer. Decode appends the new token’s keys and values and reads the retained entries. These are runtime activations; model weights remain separate.",
   router:
@@ -67,7 +67,7 @@ const explanations: Record<View, string> = {
   matrix:
     "Rows are query token positions; columns are key token positions. A causal mask prevents a query from reading future positions. Each allowed row sums to one and weights the value vectors.",
   output:
-    "After all layers, final RMSNorm and the language-model head produce 32,000 vocabulary scores, called logits. A selection rule chooses the next token. The next decode step reuses each layer’s cached keys and values.",
+    "Mixtral uses pre-norm inside every layer: normalize before attention and before the expert network. After all 32 layers, a separate final RMSNorm rescales the residual stream. The language-model head then maps it to 32,000 vocabulary scores (logits), from which a rule selects the next token.",
 };
 type ShapeExplanation = {
   title: string;
@@ -171,7 +171,7 @@ export default function App() {
   const [flowTime, setFlowTime] = useState(0);
   const [flowPlaying, setFlowPlaying] = useState(false);
   const [inspectedComponent, setInspectedComponent] = useState<
-    "norm1" | "norm2" | null
+    "norm1" | "norm2" | "final_norm" | null
   >(null);
   const [inspectionDepth, setInspectionDepth] = useState<
     "operation" | "vector" | "scalar"
@@ -184,6 +184,10 @@ export default function App() {
   const [decode, setDecode] = useState<boolean | null>(null);
   const [matrixOrigin, setMatrixOrigin] = useState<View>("attention");
   const cameraRef = useRef<CameraPose | null>(null);
+  const explanationRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    explanationRef.current?.scrollTo({ top: 0 });
+  }, [state.view, inspectedComponent]);
   const reduced = useMemo(
     () => matchMedia("(prefers-reduced-motion: reduce)").matches,
     [],
@@ -200,25 +204,16 @@ export default function App() {
     state.view === "cache" && (flowPlaying || flowTime > 0)
       ? flowTime >= 6
       : (decode ?? ((time >= 41.5 && time < 45) || time >= 74));
-  const rms = useMemo(
-    () =>
-      inspectRmsNorm(
-        state.layer,
-        state.token,
-        inspectedComponent === "norm2" ? 2 : 1,
-      ),
-    [state.layer, state.token, inspectedComponent],
-  );
   const shape = explainShape(state, showingDecode);
   const contextForView = (view: View): ContextMode =>
     ["attention", "cache", "matrix"].includes(view) ? "isolated" : "muted";
   const change = (patch: Partial<Selection>) => {
-    if (patch.view && patch.view !== state.view)
+    if (patch.view && (patch.view !== state.view || inspectedComponent))
       setContextMode(contextForView(patch.view));
     setPlaying(false);
     setFlowPlaying(false);
     setFlowTime(0);
-    if (patch.view && patch.view !== "layer") setInspectedComponent(null);
+    if (patch.view) setInspectedComponent(null);
     if (patch.view === "matrix" && state.view !== "matrix")
       setMatrixOrigin(state.view);
     setState((s) => ({
@@ -228,12 +223,25 @@ export default function App() {
       spacing: 1,
     }));
   };
+  const inspectNorm = (component: "norm1" | "norm2" | "final_norm") => {
+    change({ view: component === "final_norm" ? "output" : "layer" });
+    setInspectedComponent(component);
+    setInspectionDepth("operation");
+    setContextMode("isolated");
+    setRestorePose(null);
+  };
+  const closeNorm = () => {
+    setInspectedComponent(null);
+    setContextMode("muted");
+    setRestorePose(null);
+  };
   const applyChapter = (t: number) => {
     setFlowPlaying(false);
     setFlowTime(0);
     setInspectedComponent(null);
     const c = chapterAt(t);
-    if (c.view !== state.view) setContextMode(contextForView(c.view));
+    if (c.view !== state.view || inspectedComponent)
+      setContextMode(contextForView(c.view));
     setState((s) => ({
       ...s,
       ...c.selection,
@@ -289,13 +297,23 @@ export default function App() {
       flowTime,
       flowPlaying,
       contextMode,
+      inspectedComponent,
       ready,
       get camera() {
         return cameraRef.current;
       },
       build,
     };
-  }, [state, time, playing, flowTime, flowPlaying, contextMode, ready]);
+  }, [
+    state,
+    time,
+    playing,
+    flowTime,
+    flowPlaying,
+    contextMode,
+    inspectedComponent,
+    ready,
+  ]);
   const review = () => {
     const value = JSON.stringify(
       {
@@ -377,13 +395,21 @@ export default function App() {
       )
         throw Error("Invalid flow state");
       if (
-        ![null, "norm1", "norm2"].includes(value.inspectedComponent) ||
+        ![null, "norm1", "norm2", "final_norm"].includes(
+          value.inspectedComponent,
+        ) ||
         !["operation", "vector", "scalar"].includes(value.inspectionDepth) ||
         !Number.isInteger(value.inspectionChannel) ||
         value.inspectionChannel < 0 ||
         value.inspectionChannel >= 8
       )
         throw Error("Invalid inspection state");
+      if (
+        value.inspectedComponent &&
+        value.state.view !==
+          (value.inspectedComponent === "final_norm" ? "output" : "layer")
+      )
+        throw Error("The RMSNorm selection does not belong to this view");
       const restoredContextMode =
         value.contextMode === undefined
           ? contextForView(value.state.view)
@@ -449,11 +475,37 @@ export default function App() {
         </button>
       </header>
       <main>
+        <nav className="component-nav" aria-label="Component views">
+          {views.map((v) => (
+            <button
+              key={v}
+              aria-pressed={!inspectedComponent && state.view === v}
+              onClick={() => change({ view: v })}
+            >
+              {labels[v]}
+            </button>
+          ))}
+          <button
+            aria-pressed={!!inspectedComponent}
+            onClick={() =>
+              inspectNorm(state.view === "output" ? "final_norm" : "norm1")
+            }
+          >
+            RMSNorm
+          </button>
+        </nav>
         <section className="exhibit" aria-label="Interactive model">
           <div className="scene-heading">
             <div>
-              <small>01 / FOLLOW THE COMPUTATION</small>
-              <h1>{labels[state.view]}</h1>
+              <h1>
+                {inspectedComponent
+                  ? inspectedComponent === "final_norm"
+                    ? "Final RMSNorm"
+                    : inspectedComponent === "norm1"
+                      ? "RMSNorm before attention"
+                      : "RMSNorm before experts"
+                  : labels[state.view]}
+              </h1>
             </div>
             <span className="badge">Illustrative data</span>
           </div>
@@ -466,6 +518,7 @@ export default function App() {
               state={state}
               lowQuality={lowQuality}
               contextMode={contextMode}
+              normFocus={inspectedComponent}
               cameraRevision={cameraRevision}
               time={time}
               flowTime={flowTime}
@@ -498,10 +551,9 @@ export default function App() {
                               ? "attention"
                               : "layer";
                 change(patch);
-                if (id === "norm1" || id === "norm2") {
-                  setInspectedComponent(id);
-                  setInspectionDepth("operation");
-                } else setInspectedComponent(null);
+                if (id === "norm1" || id === "norm2" || id === "final_norm")
+                  inspectNorm(id);
+                else setInspectedComponent(null);
               }}
             />
             {!ready && (
@@ -528,8 +580,13 @@ export default function App() {
             </div>
           </div>
           <div className="location" aria-live="polite">
-            Layer {state.layer + 1} / KV group {state.group + 1} / token{" "}
-            {state.token + 1}
+            <span className="current-location">
+              {inspectedComponent === "final_norm"
+                ? "Model output"
+                : `Layer ${state.layer + 1}`}
+              {!inspectedComponent && ` / KV group ${state.group + 1}`} / token{" "}
+              {state.token + 1}
+            </span>
             <span>{ready ? "Live GLB" : "Loading"}</span>
           </div>
           <div className="spatial-controls">
@@ -591,145 +648,37 @@ export default function App() {
           </div>
           {reviewEnabled && (
             <p id="surroundings-note" className="surroundings-note">
-              Attention views hide surroundings on entry. Use Surroundings to
-              override this; connections continue beyond the isolated focus.
+              Attention and RMSNorm close-ups hide surroundings. Use
+              Surroundings to override this; connections continue beyond the
+              isolated focus.
             </p>
           )}
-          <div className="flow-controls" aria-label="Flow demonstration">
-            <div>
-              <button
-                aria-pressed={flowPlaying}
-                onClick={() => {
-                  setPlaying(false);
-                  setFlowPlaying((value) => !value);
-                }}
-              >
-                {flowPlaying ? "Pause flow" : "Animate flow"}
-              </button>
-              <button
-                onClick={() => {
-                  setPlaying(false);
-                  setFlowPlaying(false);
-                  setFlowTime((value) => (value + 1) % 12);
-                }}
-              >
-                Step flow
-              </button>
-              <output>{flowTime.toFixed(1)} / 12 s</output>
-            </div>
-            <p>
-              {flowDescription(state.view, flowTime)} . This repeating
-              demonstration is separate from model inference and the guided
-              tour.
-            </p>
-          </div>
-          <div className="tour">
-            <div className="tour-buttons">
-              <button
-                className="primary"
-                onClick={() => {
-                  if (time >= 80) seek(0);
-                  setPlaying(!playing);
-                }}
-              >
-                {playing ? "Pause tour" : "Play tour"}
-              </button>
-              <button
-                onClick={() => {
-                  setPlaying(false);
-                  seek(Math.max(0, chapter.start - 1));
-                }}
-              >
-                Previous
-              </button>
-              <button
-                onClick={() => {
-                  setPlaying(false);
-                  seek(Math.min(79.9, chapter.end));
-                }}
-              >
-                Next
-              </button>
-              <button onClick={() => setPlaying(false)}>Explore</button>
+        </section>
+        <aside ref={explanationRef} aria-label="Component explanation">
+          <h2>
+            {inspectedComponent ? "RMSNorm, step by step" : "How it works"}
+          </h2>
+          {!inspectedComponent && (
+            <p className="explanation-intro">{explanations[state.view]}</p>
+          )}
+
+          <div className="selection">
+            {!inspectedComponent && (
               <label>
-                Speed{" "}
+                KV group
                 <select
-                  aria-label="Speed"
-                  value={speed}
-                  onChange={(e) => setSpeed(+e.target.value)}
+                  aria-label="KV group"
+                  value={state.group}
+                  onChange={(e) => change({ group: +e.target.value })}
                 >
-                  <option value=".5">0.5×</option>
-                  <option value="1">1×</option>
-                  <option value="1.5">1.5×</option>
+                  {Array.from({ length: 8 }, (_, i) => (
+                    <option key={i} value={i}>
+                      Group {i + 1} · Q {i * 4 + 1}–{i * 4 + 4}
+                    </option>
+                  ))}
                 </select>
               </label>
-            </div>
-            <label className="scrubber">
-              Tour position
-              <input
-                aria-label="Tour position"
-                type="range"
-                min="0"
-                max="80"
-                step=".1"
-                value={time}
-                onChange={(e) => seek(+e.target.value)}
-              />
-              <output>{time.toFixed(1)} / 80 s</output>
-            </label>
-            <p className="caption">
-              <span className="caption-label">
-                Tour chapter: {chapter.title}
-              </span>
-              {chapter.caption}
-            </p>
-            <div className="chapters">
-              {chapters.map((c, i) => (
-                <button
-                  key={c.id}
-                  aria-label={`Chapter ${i + 1}: ${c.id}`}
-                  aria-pressed={chapter.id === c.id}
-                  onClick={() => {
-                    setPlaying(false);
-                    seek(c.start);
-                  }}
-                >
-                  {i + 1}
-                </button>
-              ))}
-            </div>
-          </div>
-        </section>
-        <aside>
-          <small>02 / INSPECT & UNDERSTAND</small>
-          <h2>Follow one token</h2>
-          <p>{explanations[state.view]}</p>
-          <nav aria-label="Component views">
-            {views.map((v) => (
-              <button
-                key={v}
-                aria-pressed={state.view === v}
-                onClick={() => change({ view: v })}
-              >
-                {labels[v]}
-              </button>
-            ))}
-          </nav>
-          <div className="selection">
-            <label>
-              KV group
-              <select
-                aria-label="KV group"
-                value={state.group}
-                onChange={(e) => change({ group: +e.target.value })}
-              >
-                {Array.from({ length: 8 }, (_, i) => (
-                  <option key={i} value={i}>
-                    Group {i + 1} · Q {i * 4 + 1}–{i * 4 + 4}
-                  </option>
-                ))}
-              </select>
-            </label>
+            )}
             <label>
               Token
               <select
@@ -745,195 +694,78 @@ export default function App() {
               </select>
             </label>
           </div>
-          <section
-            className="shape-explanation"
-            aria-label="Selected component shape and dimensions"
-          >
-            <span className="shape-kind">{shape.kind}</span>
-            <h3>{shape.title}</h3>
-            <p>{shape.role}</p>
-            <dl>
-              <div>
-                <dt>Dimensions</dt>
-                <dd>{shape.dimensions}</dd>
-              </div>
-              <div>
-                <dt>Spatial meaning</dt>
-                <dd>{shape.arrangement}</dd>
-              </div>
-            </dl>
-            <p className="shape-scale">
-              Open frames enclose subgraphs. Circular RMSNorm badges and other
-              solid nodes apply operations. Matrix panels hold learned weights
-              or runtime arrays, identified by their labels. Moving points,
-              bundles and grids represent token IDs, vectors and tensors.
-            </p>
-            <p className="shape-scale">
-              Geometry is schematic. Shape size, thickness and displayed cells
-              do not encode parameter counts or computational cost.
-            </p>
-          </section>
+          {(["layer", "output"].includes(state.view) || inspectedComponent) && (
+            <div
+              className="norm-actions"
+              role="group"
+              aria-label="RMSNorm location"
+            >
+              <button
+                aria-pressed={inspectedComponent === "norm1"}
+                onClick={() => inspectNorm("norm1")}
+              >
+                Before attention
+              </button>
+              <button
+                aria-pressed={inspectedComponent === "norm2"}
+                onClick={() => inspectNorm("norm2")}
+              >
+                Before experts
+              </button>
+              <button
+                aria-pressed={inspectedComponent === "final_norm"}
+                onClick={() => inspectNorm("final_norm")}
+              >
+                Final RMSNorm
+              </button>
+            </div>
+          )}
+          {inspectedComponent && (
+            <RmsNormPanel
+              component={inspectedComponent}
+              layer={state.layer}
+              token={state.token}
+              depth={inspectionDepth}
+              channel={inspectionChannel}
+              onDepthChange={setInspectionDepth}
+              onChannelChange={setInspectionChannel}
+              onClose={closeNorm}
+            />
+          )}
+          {!inspectedComponent && (
+            <details
+              className="shape-explanation"
+              aria-label="Selected component shape and dimensions"
+            >
+              <summary>Shapes and tensor dimensions</summary>
+              <span className="shape-kind">{shape.kind}</span>
+              <h3>{shape.title}</h3>
+              <p>{shape.role}</p>
+              <dl>
+                <div>
+                  <dt>Dimensions</dt>
+                  <dd>{shape.dimensions}</dd>
+                </div>
+                <div>
+                  <dt>Spatial meaning</dt>
+                  <dd>{shape.arrangement}</dd>
+                </div>
+              </dl>
+              <p className="shape-scale">
+                Open frames enclose subgraphs. Circular RMSNorm badges and other
+                solid nodes apply operations. Matrix panels hold learned weights
+                or runtime arrays, identified by their labels. Moving points,
+                bundles and grids represent token IDs, vectors and tensors.
+              </p>
+              <p className="shape-scale">
+                Geometry is schematic. Shape size, thickness and displayed cells
+                do not encode parameter counts or computational cost.
+              </p>
+            </details>
+          )}
           <p className="data-label">
             Illustrative values · seed 1729 · no model inference
           </p>
-          {state.view === "layer" && (
-            <section className="rms-inspection" aria-label="RMSNorm inspection">
-              <button
-                onClick={() => {
-                  setInspectedComponent("norm1");
-                  setInspectionDepth("operation");
-                }}
-              >
-                Inspect RMSNorm
-              </button>
-              {inspectedComponent && (
-                <>
-                  <nav
-                    className="inspection-breadcrumb"
-                    aria-label="Inspection path"
-                  >
-                    <button onClick={() => change({ view: "overview" })}>
-                      Model
-                    </button>
-                    <span>→</span>
-                    <button onClick={() => setInspectedComponent(null)}>
-                      Layer {state.layer + 1}
-                    </button>
-                    <span>→</span>
-                    <button onClick={() => setInspectionDepth("operation")}>
-                      RMSNorm {inspectedComponent === "norm1" ? 1 : 2}
-                    </button>
-                    {inspectionDepth !== "operation" && (
-                      <>
-                        <span>→</span>
-                        <button onClick={() => setInspectionDepth("vector")}>
-                          Activation vector
-                        </button>
-                      </>
-                    )}
-                    {inspectionDepth === "scalar" && (
-                      <>
-                        <span>→</span>
-                        <span>Channel {inspectionChannel + 1}</span>
-                      </>
-                    )}
-                  </nav>
-                  <h3>
-                    RMSNorm {inspectedComponent === "norm1" ? 1 : 2}: scale an
-                    activation vector
-                  </h3>
-                  <p>
-                    The circular badge represents an operation, with a schematic
-                    size. RMSNorm divides all channels by one root mean square
-                    denominator, then applies a learned scale γ to each channel.
-                  </p>
-                  <p className="formula">yᵢ = γᵢ × xᵢ / √(mean(x²) + ε)</p>
-                  <p>
-                    This model uses {hidden} channels. The worked calculation
-                    below uses a complete{" "}
-                    <strong>8-channel illustrative vector</strong>, so its mean
-                    divides by 8.
-                  </p>
-                  <button onClick={() => setInspectionDepth("vector")}>
-                    Inspect activation vector
-                  </button>
-                  {inspectionDepth !== "operation" && (
-                    <>
-                      <p>
-                        Token {state.token + 1} · layer {state.layer + 1}.
-                        Select one scalar channel:
-                      </p>
-                      <div
-                        className="activation-channels"
-                        role="group"
-                        aria-label="Activation channels"
-                      >
-                        {rms.values.map((value, channel) => (
-                          <button
-                            key={channel}
-                            aria-label={`Inspect channel ${channel + 1}`}
-                            aria-pressed={
-                              inspectionDepth === "scalar" &&
-                              inspectionChannel === channel
-                            }
-                            onClick={() => {
-                              setInspectionChannel(channel);
-                              setInspectionDepth("scalar");
-                            }}
-                          >
-                            <span>x{channel + 1}</span>
-                            <strong>{value.toFixed(2)}</strong>
-                          </button>
-                        ))}
-                      </div>
-                      <dl className="rms-calculation">
-                        <div>
-                          <dt>Mean of the eight squared values</dt>
-                          <dd>
-                            (
-                            {rms.squares
-                              .map((value) => value.toFixed(4))
-                              .join(" + ")}
-                            ) / 8 ={" "}
-                            <strong>{rms.meanSquares.toFixed(6)}</strong>
-                          </dd>
-                        </div>
-                        <div>
-                          <dt>Illustrative stability constant ε</dt>
-                          <dd>{rms.epsilon}</dd>
-                        </div>
-                        <div>
-                          <dt>Shared denominator</dt>
-                          <dd>
-                            √({rms.meanSquares.toFixed(6)} + {rms.epsilon}) ={" "}
-                            <strong>{rms.denominator.toFixed(6)}</strong>
-                          </dd>
-                        </div>
-                      </dl>
-                    </>
-                  )}
-                  {inspectionDepth === "scalar" && (
-                    <>
-                      <h4>
-                        Channel {inspectionChannel + 1}: one activation value
-                      </h4>
-                      <p>
-                        An activation channel holds a scalar number at this
-                        position in the computation. It is not a separate
-                        neuron-shaped object. The learned scale is a weight; x
-                        and y are runtime values.
-                      </p>
-                      <dl className="rms-calculation">
-                        <div>
-                          <dt>Input xᵢ</dt>
-                          <dd>{rms.values[inspectionChannel].toFixed(2)}</dd>
-                        </div>
-                        <div>
-                          <dt>Squared input xᵢ²</dt>
-                          <dd>{rms.squares[inspectionChannel].toFixed(4)}</dd>
-                        </div>
-                        <div>
-                          <dt>Illustrative learned scale γᵢ</dt>
-                          <dd>{rms.gamma[inspectionChannel].toFixed(2)}</dd>
-                        </div>
-                        <div>
-                          <dt>Output yᵢ</dt>
-                          <dd>
-                            {rms.gamma[inspectionChannel].toFixed(2)} ×{" "}
-                            {rms.values[inspectionChannel].toFixed(2)} /{" "}
-                            {rms.denominator.toFixed(6)} ={" "}
-                            <strong>
-                              {rms.output[inspectionChannel].toFixed(6)}
-                            </strong>
-                          </dd>
-                        </div>
-                      </dl>
-                    </>
-                  )}
-                </>
-              )}
-            </section>
-          )}
           {["attention", "matrix"].includes(state.view) && (
             <>
               <h3>Causal attention</h3>
@@ -1205,7 +1037,7 @@ export default function App() {
               </p>
             </>
           )}
-          {state.view === "output" && (
+          {state.view === "output" && !inspectedComponent && (
             <>
               <h3>Candidate next tokens</h3>
               <p>
@@ -1244,27 +1076,28 @@ export default function App() {
               </button>
             </>
           )}
-          {["overview", "layer"].includes(state.view) && (
-            <div className="facts">
-              <p>
-                <strong>32</strong> sequential layers
-              </p>
-              <p>
-                <strong>32 Q / 8 KV</strong> heads per layer
-              </p>
-              <p>
-                <strong>2 of 8</strong> experts per token per layer
-              </p>
-              <details>
-                <summary>Residuals and normalization</summary>
+          {!inspectedComponent &&
+            ["overview", "layer"].includes(state.view) && (
+              <div className="facts">
                 <p>
-                  x → RMSNorm → attention → add x → RMSNorm → MoE → add
-                  attention-stage residual. RMSNorm uses root mean square
-                  scaling and a learned scale vector.
+                  <strong>32</strong> sequential layers
                 </p>
-              </details>
-            </div>
-          )}
+                <p>
+                  <strong>32 Q / 8 KV</strong> heads per layer
+                </p>
+                <p>
+                  <strong>2 of 8</strong> experts per token per layer
+                </p>
+                <details>
+                  <summary>Residuals and normalization</summary>
+                  <p>
+                    x → RMSNorm → attention → add x → RMSNorm → MoE → add
+                    attention-stage residual. RMSNorm uses root mean square
+                    scaling and a learned scale vector.
+                  </p>
+                </details>
+              </div>
+            )}
           {reviewEnabled && (
             <details className="review">
               <summary>Development view context</summary>
@@ -1282,6 +1115,114 @@ export default function App() {
             </details>
           )}
         </aside>
+        <section className="playback" aria-label="Animation and guided tour">
+          {!inspectedComponent && (
+            <div className="flow-controls" aria-label="Flow demonstration">
+              <div>
+                <button
+                  aria-pressed={flowPlaying}
+                  onClick={() => {
+                    setPlaying(false);
+                    setFlowPlaying((value) => !value);
+                  }}
+                >
+                  {flowPlaying ? "Pause flow" : "Animate flow"}
+                </button>
+                <button
+                  onClick={() => {
+                    setPlaying(false);
+                    setFlowPlaying(false);
+                    setFlowTime((value) => (value + 1) % 12);
+                  }}
+                >
+                  Step flow
+                </button>
+                <output>{flowTime.toFixed(1)} / 12 s</output>
+              </div>
+              <p>
+                {flowDescription(state.view, flowTime)} . This repeating
+                demonstration is separate from model inference and the guided
+                tour.
+              </p>
+            </div>
+          )}
+          <div className="tour">
+            <div className="tour-buttons">
+              <button
+                className="primary"
+                onClick={() => {
+                  if (time >= 80) seek(0);
+                  setPlaying(!playing);
+                }}
+              >
+                {playing ? "Pause tour" : "Play tour"}
+              </button>
+              <button
+                onClick={() => {
+                  setPlaying(false);
+                  seek(Math.max(0, chapter.start - 1));
+                }}
+              >
+                Previous
+              </button>
+              <button
+                onClick={() => {
+                  setPlaying(false);
+                  seek(Math.min(79.9, chapter.end));
+                }}
+              >
+                Next
+              </button>
+              <button onClick={() => setPlaying(false)}>Explore</button>
+              <label>
+                Speed{" "}
+                <select
+                  aria-label="Speed"
+                  value={speed}
+                  onChange={(e) => setSpeed(+e.target.value)}
+                >
+                  <option value=".5">0.5×</option>
+                  <option value="1">1×</option>
+                  <option value="1.5">1.5×</option>
+                </select>
+              </label>
+            </div>
+            <label className="scrubber">
+              Tour position
+              <input
+                aria-label="Tour position"
+                type="range"
+                min="0"
+                max="80"
+                step=".1"
+                value={time}
+                onChange={(e) => seek(+e.target.value)}
+              />
+              <output>{time.toFixed(1)} / 80 s</output>
+            </label>
+            <p className="caption">
+              <span className="caption-label">
+                Tour chapter: {chapter.title}
+              </span>
+              {chapter.caption}
+            </p>
+            <div className="chapters">
+              {chapters.map((c, i) => (
+                <button
+                  key={c.id}
+                  aria-label={`Chapter ${i + 1}: ${c.id}`}
+                  aria-pressed={chapter.id === c.id}
+                  onClick={() => {
+                    setPlaying(false);
+                    seek(c.start);
+                  }}
+                >
+                  {i + 1}
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
       </main>
       <footer>
         Generated in Blender · Navigated live in Three.js · Illustrative Mixtral
