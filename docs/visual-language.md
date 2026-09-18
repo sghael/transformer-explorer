@@ -4,10 +4,10 @@ Original procedural schematics; no external artwork is used. Space represents co
 
 ## Overview
 
-All forward computation runs left to right, including the sequence of 32 individually selectable layers. Each layer is an open container with a left input and right output. Spacing spreads the sequence along X and moves its input/output stages outward. Depth separates parallel heads and experts inside each layer; it no longer turns the layer sequence away from the rest of the graph.
+Forward computation runs left to right. One enlarged open frame contains the representative layer, with First (1), Middle (16), and Last (32) examples. Labeled spans before and after it account for the remaining layers without repeating identical boxes. Their lengths are schematic. Depth separates parallel heads and experts inside the representative layer.
 
 ```text
-Token IDs → Embedding → [L1] → [L2] → … → [L32] → RMSNorm → LM head → Next ID
+IDs → Embed → 15 earlier layers → [Layer 16] → 16 later layers → RMSNorm → LM head → ID
     ↑                                                                  │
     └────────────────────── next decode step ───────────────────────────┘
 ```

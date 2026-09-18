@@ -37,3 +37,17 @@ The directional-layout full-browser run on **20260917T235010Z-4ef01d** measured 
 Active overview flow was measured on the earlier directional build **20260917T234138Z-2e3894**, before the screen-width overview contours were added: **872 draw calls**, **23,242 triangles**, **16.8 ms median**, **66.6 ms p95**, and **30.507 ms mean**. This remains a recorded failure to sustain 60 fps under software rendering. It is not a measurement of the later contour rendering or of the target laptop. No controlled before/after performance improvement is claimed.
 
 The current GLB has **21,220 triangles**, **91 shared meshes**, **1,175 nodes**, and **502,836 bytes**. Full, muted and isolated context preserve world transforms; isolation suppresses rendering of outside meshes. Its hardware performance effect has not been benchmarked.
+
+## Representative-layer layout
+
+Build **20260918T001857Z-249d93** replaces the 32 overview frames with one representative frame. Paused Full-context measurements used the same 1440 × 1100 software-rendering setup and 59-interval sampling:
+
+| View | Draw calls | Triangles | Median frame | p95 frame |
+| --- | ---: | ---: | ---: | ---: |
+| overview | 755 | 16,272 | 16.7 ms | 16.8 ms |
+| layer | 744 | 15,864 | 16.7 ms | 16.7 ms |
+| attention | 351 | 6,316 | 16.7 ms | 16.7 ms |
+
+The earlier representative build **20260918T001430Z-31ecea** measured active overview flow at **780 draw calls**, **18,106 triangles**, **16.7 ms median**, **50.0 ms p95**, and **23.45 ms mean**. The later build changes labels and annotation scope. These diagnostic samples still do not establish sustained 60 fps or target-laptop performance, and were not a controlled comparison.
+
+The GLB contains **16,000 triangles**, **88 shared meshes**, **1,018 nodes**, and **461,416 bytes**. It retains the complete representative interior and compresses repeated model-level geometry. The numerical model still contains 32 layers.

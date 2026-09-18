@@ -1,18 +1,16 @@
 # Scene and interaction contract
 
-Version 3. Original schematic geometry; all samples are illustrative. Architecture counts come from shared/model-spec.json.
+Version 4. Original schematic geometry; all samples are illustrative. Architecture counts come from shared/model-spec.json.
 
 ## Coordinates and ownership
 
 Author coordinates are browser coordinates: X runs left to right through computation, Y is up, Z separates parallel groups. Sequential layers also advance along X. The Blender helper maps (x,y,z) to (x,-z,y); standard glTF export restores (x,y,z). All object transforms are local to their parent, with unit scale and centered mesh pivots. Mesh dimensions are baked into shared mesh vertices. An asymmetric test marker at browser (1,2,3), with dimensions (.2,.4,.6), and CAM_TEST at (4,5,6) verify export conversion. The browser hides diagnostic geometry.
 
-MODEL_ROOT contains LAYER_STACK, FOCUS_LAYER, input, embedding, final_norm, lm_head, output, and camera anchor empties. LAYER_STACK contains layer_0 through layer_31 at ((i-15.5)*.65,0,0), dimensions (.484,.16,.264). Browser spacing multiplies each layer's base X coordinate by a user factor in [1,3]. This follows the same left-to-right direction as the internal computation. Depth is reserved for parallel alternatives. A connecting path follows their order.
+MODEL_ROOT contains LAYER_STACK, FOCUS_LAYER, input, embedding, final_norm, lm_head, output, and camera anchor empties. LAYER_STACK contains one representative_layer frame at the origin, dimensions (3.52,1.2,1.92). It stands for the selected first, middle, or last layer (1, 16, or 32). The numerical architecture still contains 32 sequential layers with distinct weights. The other 31 are compressed into labeled spans before and after the representative frame; span length does not encode layer count.
 
-FOCUS_LAYER contains one reusable detailed assembly. It remains present at the selected layer's center at a uniform browser scale of 0.022. Its input and output meet the enclosing frame's left and right ports. Layout constants are shared by the generator and viewer through shared/layout.json. The selected layer's collapsed summary connection is hidden, while the other 31 layers retain their summary paths. Selecting a different layer rebinds this reusable interior; navigating between views of the same selection never relocates it. Context modes can suppress surrounding meshes. Metadata layer=-1 means the currently selected layer, never shared model weights.
+FOCUS_LAYER contains one reusable detailed assembly at the origin with uniform browser scale 0.16. Its input and output meet the frame's left and right ports. Shared layout.json drives the Blender generator and viewer. Choosing another representative changes illustrative data and labels, while geometry stays in place. Navigation never relocates the interior. Metadata layer=-1 is bound to the current selection in the viewer.
 
-Thin screen-width contours follow the same exported frame bounds and links, keeping them legible at overview scale without changing their positions. They recede with the surrounding context during close inspection.
-
-The stack has 31 explicit inter-layer links. Embedding enters the first layer; the last layer connects to final RMSNorm, the output projection and token selection. A separate feedback edge carries the next token back to the input. Spacing updates these endpoints and moves the input/output stages outward as well as changing layer positions. Every forward macro edge stays on X with Y=Z=0. The autoregressive return uses its own orthogonal depth lane. The main graph trunks and residual/expert routing lie on Y=0. Short port stubs change height only where an actual input or output face requires it.
+Thin screen-width contours follow the exported frame bounds. Embedding connects through the earlier-layer span to the frame; the later-layer span connects the frame to final RMSNorm, output projection, and token selection. All forward macro edges stay on X with Y=Z=0. The autoregressive return uses its own orthogonal depth lane. The model no longer exports 32 repeated frames or per-layer gap connections. Spacing is fixed at one and retained only for compatibility with existing state data.
 
 Inside the layer, component X positions convey computation order: norm1=-8, attention=-5, add1=-2, norm2=0, router=2, experts=5, merge=8, add2=10. Separate gray stage segments prevent a false direct path through attention or around the experts. Both residual branches join their addition nodes. The selected router paths terminate at expert ports; every expert contains its own gate/up/SiLU/product/down graph. The two routed branches cannot connect directly across the interior and bypass those operations.
 
@@ -24,13 +22,13 @@ Every semantic object has extras: schema_version=1, id (unique stable string), c
 
 ## Browser state
 
-One state owns selected layer, group, token, expert, view (overview/layer/attention/cache/router/expert/matrix/output/input), spacing, tour time, playing, speed, and illustrative seed 1729. View changes never reset selection. Matrix return restores its originating spatial view; overview round trips preserve layer/group/token. HTML controls provide all picking alternatives. A compact Layer dropdown selects any of the 32 layers, while the persistent location text identifies the selected layer, group, and token.
+One state owns selected layer, group, token, expert, view (overview/layer/attention/cache/router/expert/matrix/output/input), spacing, tour time, playing, speed, and illustrative seed 1729. View changes never reset selection. Matrix return restores its originating spatial view; overview round trips preserve layer/group/token. HTML controls provide all picking alternatives. A compact Layer dropdown selects First, Middle, or Last, while the persistent location text identifies the selected layer, group, and token.
 
 Absolute timeline time determines chapter, pose, demonstration progress and highlights. No accumulated simulation changes are allowed. Explore and pause give OrbitControls sole camera ownership. Playback disables orbit and interpolates toward chapter anchors; resume blends from the current camera. Reduced motion jumps directly to identical target states. Review context serializes build/asset version, seed, state, camera position/target and viewport, and can restore that state.
 
 ## Verification
 
-Check first/middle/last layer overview → layer → attention → matrix → layer → overview round trips. Check all 32 selections, each four-Q group, both residual paths, eight alternatives and two selected routes. Inspect two oblique angles, changed spacing, extracted layer, matrix and narrow viewport. Numerical cells and spatial highlights use the same deterministic data. Track structural, browser visual/interaction and human learner evidence separately.
+Check first/middle/last layer overview → layer → attention → matrix → layer → overview round trips. Check all three representative selections, each four-Q group, both residual paths, eight alternatives and two selected routes. Inspect two oblique angles, the representative interior, matrix and narrow viewport. Numerical cells and spatial highlights use the same deterministic data. Track structural, browser visual/interaction and human learner evidence separately.
 
 ## Inspection and flow
 

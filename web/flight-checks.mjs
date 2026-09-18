@@ -136,8 +136,7 @@ try {
         settledAt = null;
       const tracked = [
         "focus",
-        "stack",
-        "layer_11",
+        "representative_layer",
         "q_8",
         "k_2",
         "score_2",

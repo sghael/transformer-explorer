@@ -1,15 +1,19 @@
 import layout from "../../shared/layout.json";
-import spec from "../../shared/model-spec.json";
 import type { Point } from "./spatial";
 
 export { layout };
 export type MacroId = keyof typeof layout.macro_nodes;
-export const halfSpan =
-  ((spec.architecture.num_layers - 1) * layout.layer_pitch) / 2;
+export const representativeLayers = [0, 15, 31] as const;
+export function representativeLayer(layer: number): number {
+  return representativeLayers.reduce<number>(
+    (best, candidate) =>
+      Math.abs(candidate - layer) < Math.abs(best - layer) ? candidate : best,
+    15,
+  );
+}
 export const layerHalf = layout.layer_dimensions[0] / 2;
-export function macroX(id: MacroId, spacing: number): number {
-  const x = layout.macro_nodes[id].x;
-  return x + Math.sign(x) * halfSpan * (spacing - 1);
+export function macroX(id: MacroId, _spacing: number): number {
+  return layout.macro_nodes[id].x;
 }
 export function macroFace(id: MacroId, side: -1 | 1, spacing: number): Point {
   return [
@@ -18,8 +22,8 @@ export function macroFace(id: MacroId, side: -1 | 1, spacing: number): Point {
     0,
   ];
 }
-export function stackEnds(spacing: number): [number, number] {
-  return [-halfSpan * spacing - layerHalf, halfSpan * spacing + layerHalf];
+export function stackEnds(_spacing: number): [number, number] {
+  return [-layerHalf, layerHalf];
 }
 export function macroPaths(spacing: number): Record<string, Point[]> {
   const [first, last] = stackEnds(spacing);

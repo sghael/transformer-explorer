@@ -5,6 +5,7 @@ import Scene, {
   type ContextMode,
 } from "./Scene";
 import { flowDescription } from "./Flow";
+import { representativeLayers, representativeLayer } from "./layout";
 import { inspectRmsNorm } from "./inspection";
 import EvidenceStrip, {
   ProbabilityBar,
@@ -19,7 +20,7 @@ import {
   type View,
 } from "./data";
 const initial: Selection = {
-  layer: 11,
+  layer: 15,
   group: 2,
   token: 4,
   expert: 0,
@@ -50,7 +51,7 @@ const labels: Record<View, string> = {
 };
 const explanations: Record<View, string> = {
   overview:
-    "Trace a token through 32 decoder layers. Each layer has distinct learned weights. Layers advance left to right along +X, following the computation. Depth separates parallel heads and experts; these coordinates are schematic.",
+    "The model has 32 decoder layers with distinct learned weights. This overview compresses the other 31 layers and explains one representative interior. Choose the first, middle or last layer; computation runs left to right, and depth separates parallel heads and experts.",
   input:
     "A token ID selects a learned embedding row: 4,096 numbers form its initial representation. The words below are illustrative chunks, not verified tokenizer boundaries.",
   layer:
@@ -85,12 +86,12 @@ function explainShape(selection: Selection, decode: boolean): ShapeExplanation {
   const layer = selection.layer + 1;
   const explanations: Record<View, ShapeExplanation> = {
     overview: {
-      title: "Decoder layer stack",
+      title: "One representative decoder layer",
       kind: "Repeated computation",
-      role: "Each thin slice represents a complete decoder layer with its own weights.",
+      role: "One interior explains the architecture repeated across 32 layers. The other 31 layers are compressed; their learned weights are distinct.",
       dimensions: `${architecture.num_layers} sequential layers; ${hidden} activation channels per token.`,
       arrangement:
-        "Layers advance left to right along +X. Depth separates parallel heads and experts, not sequential layers. Positions do not depict physical memory.",
+        "First, middle and last select layers 1, 16 and 32 in the same representative frame. Depth separates parallel heads and experts. Positions do not depict physical memory.",
     },
     input: {
       title: "Token embedding table",
@@ -106,7 +107,7 @@ function explainShape(selection: Selection, decode: boolean): ShapeExplanation {
       role: "Connections carry tensors between operations. Circular RMSNorm badges rescale each token vector; attention and the expert network transform it; each + junction adds the bypassed vector.",
       dimensions: `${hidden} channels enter and leave each sublayer. Both residual additions preserve this width.`,
       arrangement:
-        "The layer interior is nested inside its selected frame and computes along +X, matching the layer sequence. Attention groups and expert alternatives separate in depth within that interior; their dimensions are schematic.",
+        "The representative interior stays in one frame and computes along +X. Choosing a layer changes its illustrative values; real layers have distinct learned weights. Attention groups and expert alternatives separate in depth.",
     },
     attention: {
       title: `Group ${selection.group + 1}: Q / K / V projections`,
@@ -216,7 +217,12 @@ export default function App() {
     if (patch.view && patch.view !== "layer") setInspectedComponent(null);
     if (patch.view === "matrix" && state.view !== "matrix")
       setMatrixOrigin(state.view);
-    setState((s) => ({ ...s, ...patch }));
+    setState((s) => ({
+      ...s,
+      ...patch,
+      layer: representativeLayer(patch.layer ?? s.layer),
+      spacing: 1,
+    }));
   };
   const applyChapter = (t: number) => {
     setFlowPlaying(false);
@@ -227,7 +233,8 @@ export default function App() {
       ...s,
       ...c.selection,
       view: c.view,
-      spacing: c.pose.spacing,
+      layer: representativeLayer(c.selection.layer ?? s.layer),
+      spacing: 1,
     }));
     setDecode(null);
   };
@@ -290,6 +297,7 @@ export default function App() {
         build,
         asset: (import.meta as any).env.VITE_ASSET_NAME || "transformer.glb",
         seed: 1729,
+        layoutVersion: 2,
         state,
         time,
         decode: showingDecode,
@@ -386,9 +394,14 @@ export default function App() {
       setLowQuality(value.lowQuality);
       setSpeed(value.speed);
       setMatrixOrigin(value.matrixOrigin);
-      setState(value.state);
+      setState({
+        ...value.state,
+        layer: representativeLayer(value.state.layer),
+        spacing: 1,
+      });
       setTime(value.time);
-      setRestorePose(value.camera);
+      setRestorePose(value.layoutVersion === 2 ? value.camera : null);
+      setCameraRevision((revision) => revision + 1);
     } catch (e) {
       setContext(String(e));
     }
@@ -497,7 +510,7 @@ export default function App() {
               }
             >
               {state.view === "overview"
-                ? "Left → right (+X): 32 sequential layers · Depth: parallel heads / experts"
+                ? "Left → right (+X): computation · One representative layer; 31 compressed"
                 : state.view === "matrix"
                   ? "Rows: query tokens · Columns: key tokens"
                   : state.view === "cache"
@@ -522,9 +535,9 @@ export default function App() {
                   change({ layer: Number(event.target.value), view: "layer" })
                 }
               >
-                {Array.from({ length: 32 }, (_, i) => (
-                  <option key={i} value={i}>
-                    {i + 1} of 32
+                {representativeLayers.map((layer, index) => (
+                  <option key={layer} value={layer}>
+                    {["First", "Middle", "Last"][index]} · {layer + 1}
                   </option>
                 ))}
               </select>
@@ -539,19 +552,6 @@ export default function App() {
                 <option value="standard">Standard</option>
                 <option value="reduced">Reduced pixel density</option>
               </select>
-            </label>
-            <label>
-              Stack spacing{" "}
-              <input
-                aria-label="Stack spacing"
-                type="range"
-                min="1"
-                max="3"
-                step=".1"
-                value={state.spacing}
-                onChange={(e) => change({ spacing: +e.target.value })}
-              />
-              <output>{state.spacing.toFixed(1)}×</output>
             </label>
             {reviewEnabled && (
               <label>
