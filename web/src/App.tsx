@@ -210,7 +210,11 @@ export default function App() {
     [state.layer, state.token, inspectedComponent],
   );
   const shape = explainShape(state, showingDecode);
+  const contextForView = (view: View): ContextMode =>
+    ["attention", "cache", "matrix"].includes(view) ? "isolated" : "muted";
   const change = (patch: Partial<Selection>) => {
+    if (patch.view && patch.view !== state.view)
+      setContextMode(contextForView(patch.view));
     setPlaying(false);
     setFlowPlaying(false);
     setFlowTime(0);
@@ -229,6 +233,7 @@ export default function App() {
     setFlowTime(0);
     setInspectedComponent(null);
     const c = chapterAt(t);
+    if (c.view !== state.view) setContextMode(contextForView(c.view));
     setState((s) => ({
       ...s,
       ...c.selection,
@@ -380,7 +385,9 @@ export default function App() {
       )
         throw Error("Invalid inspection state");
       const restoredContextMode =
-        value.contextMode === undefined ? "muted" : value.contextMode;
+        value.contextMode === undefined
+          ? contextForView(value.state.view)
+          : value.contextMode;
       if (!["full", "muted", "isolated"].includes(restoredContextMode))
         throw Error("Invalid surroundings mode");
       setContextMode(restoredContextMode);
@@ -584,8 +591,8 @@ export default function App() {
           </div>
           {reviewEnabled && (
             <p id="surroundings-note" className="surroundings-note">
-              Hide surroundings isolates the focus; connections continue outside
-              it.
+              Attention views hide surroundings on entry. Use Surroundings to
+              override this; connections continue beyond the isolated focus.
             </p>
           )}
           <div className="flow-controls" aria-label="Flow demonstration">

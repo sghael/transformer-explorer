@@ -174,8 +174,8 @@ const settle = async (target = page) => {
   );
 };
 const view = async (name) => {
-  await page.getByLabel("Surroundings", { exact: true }).selectOption("full");
   await button(name).click();
+  await page.getByLabel("Surroundings", { exact: true }).selectOption("full");
   await settle();
 };
 const seek = async (time) => {

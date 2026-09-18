@@ -88,6 +88,7 @@ try {
         quaternion: root.camera.quaternion.toArray(),
         target: window.__explorerScene.camera.target,
         phase: window.__explorerScene.navigationPhase,
+        contextMode: window.__explorerScene.contextMode,
         nodes,
         opacity,
       };
@@ -184,6 +185,7 @@ try {
           quaternion: sample.quaternion,
           target: sample.target,
           phase: sample.phase,
+          contextMode: sample.contextMode,
           nodes: compact,
           opacity: sample.opacity,
           maxMatrixDelta,
@@ -203,6 +205,7 @@ try {
       requestAnimationFrame(tick);
     });
     await page.getByRole("button", { name: names[to], exact: true }).click();
+    await page.getByLabel("Surroundings", { exact: true }).selectOption("full");
     await page.waitForTimeout(650);
     await page
       .locator("canvas")
@@ -228,8 +231,11 @@ try {
       { first: frames.find((f) => f.opacity.length)?.opacity.slice(0, 6) },
     );
     check(
-      id + ": persistent GLB visibility",
-      frames.every((f) => f.visibilityChanges === 0),
+      id + ": persistent GLB visibility in Full context",
+      final.contextMode === "full" &&
+        frames
+          .filter((f) => f.contextMode === "full")
+          .every((f) => f.visibilityChanges === 0),
       { maximum: Math.max(...frames.map((f) => f.visibilityChanges)) },
     );
     check(id + ": arrived", final.phase === "settled", { duration });
