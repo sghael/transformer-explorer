@@ -169,6 +169,24 @@ try {
         await button("Restore view").click();
       } else await seek(22);
       await settle();
+      if (saved) {
+        const restored = JSON.parse(saved);
+        await expect
+          .poll(
+            async () => {
+              const current = await scene();
+              return Math.max(
+                ...["position", "target"].flatMap((field) =>
+                  current.camera[field].map((value, axis) =>
+                    Math.abs(value - restored.camera[field][axis]),
+                  ),
+                ),
+              );
+            },
+            { timeout: 8000 },
+          )
+          .toBeLessThan(0.000005);
+      }
       const after = await scene();
       expect(after.navigationPhase).toBe("settled");
       const destination =

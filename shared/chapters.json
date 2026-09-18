@@ -14,7 +14,7 @@
       "cameraTarget": [0, 0, 0],
       "detailLevel": 0,
       "selection": {
-        "layer": 11,
+        "layer": 15,
         "group": 2,
         "token": 6,
         "expert": 4
@@ -39,10 +39,10 @@
         "seed": 1729,
         "cycles": 1
       },
-      "caption": "Follow tokens left to right through 32 decoder layers to scores for the next token. Depth separates parallel heads and experts inside a layer.",
+      "caption": "Follow tokens through 32 decoder layers. One representative layer is enlarged; labeled spans compress the others. Depth separates parallel heads and experts.",
       "explanationKey": "overview",
       "misconception": "The stack shows computation, not physical parameter placement.",
-      "acceptance": "All 32 slices and a continuous input-to-output path remain visible."
+      "acceptance": "One representative frame and labeled collapsed spans preserve the 32-layer sequence and continuous path."
     },
     {
       "id": "embedding",
@@ -52,10 +52,10 @@
       "duration": 7,
       "view": "input",
       "cameraAnchor": "CAM_INPUT",
-      "cameraTarget": [-13.5, 0, 0],
+      "cameraTarget": [-6.25, 0, 0],
       "detailLevel": 1,
       "selection": {
-        "layer": 11,
+        "layer": 15,
         "group": 2,
         "token": 6,
         "expert": 4
@@ -90,7 +90,7 @@
       "cameraTarget": [0, 0, 0],
       "detailLevel": 1,
       "selection": {
-        "layer": 11,
+        "layer": 15,
         "group": 2,
         "token": 6,
         "expert": 4
@@ -100,7 +100,7 @@
       "dimming": ["unselected_layers", "unselected_groups"],
       "visibility": ["model_root", "layer_stack", "focus_layer"],
       "pose": {
-        "spacing": 1.8,
+        "spacing": 1,
         "expanded": true,
         "expertExpanded": false
       },
@@ -109,10 +109,10 @@
         "seed": 1729,
         "cycles": 1
       },
-      "caption": "Every layer repeats this structure with its own weights. Open one layer while retaining its place in the stack.",
+      "caption": "Every layer repeats this structure with its own weights. Enter the representative frame; labeled spans account for the other layers.",
       "explanationKey": "layer",
       "misconception": "Reused geometry does not imply shared model weights.",
-      "acceptance": "Spacing reveals depth, one assembly opens, and its selected stack slot stays highlighted."
+      "acceptance": "One persistent representative interior is visible, with the selected layer identity preserved."
     },
     {
       "id": "attention-entry",
@@ -125,7 +125,7 @@
       "cameraTarget": [0, 0, 0],
       "detailLevel": 1,
       "selection": {
-        "layer": 11,
+        "layer": 15,
         "group": 2,
         "token": 6,
         "expert": 4
@@ -160,7 +160,7 @@
       "cameraTarget": [-5, 0, 0],
       "detailLevel": 2,
       "selection": {
-        "layer": 11,
+        "layer": 15,
         "group": 2,
         "token": 6,
         "expert": 4
@@ -195,7 +195,7 @@
       "cameraTarget": [-5, 0, 0],
       "detailLevel": 2,
       "selection": {
-        "layer": 11,
+        "layer": 15,
         "group": 2,
         "token": 6,
         "expert": 4
@@ -230,7 +230,7 @@
       "cameraTarget": [4, 0, 0],
       "detailLevel": 2,
       "selection": {
-        "layer": 11,
+        "layer": 15,
         "group": 2,
         "token": 6,
         "expert": 4
@@ -265,7 +265,7 @@
       "cameraTarget": [5, 0, 0],
       "detailLevel": 2,
       "selection": {
-        "layer": 11,
+        "layer": 15,
         "group": 2,
         "token": 6,
         "expert": 4
@@ -303,10 +303,10 @@
       "duration": 8,
       "view": "output",
       "cameraAnchor": "CAM_LM_HEAD",
-      "cameraTarget": [14, 0, 0],
+      "cameraTarget": [7, 0, 0],
       "detailLevel": 1,
       "selection": {
-        "layer": 11,
+        "layer": 15,
         "group": 2,
         "token": 6,
         "expert": 4
@@ -347,7 +347,7 @@
       "cameraTarget": [0, 0, 0],
       "detailLevel": 0,
       "selection": {
-        "layer": 11,
+        "layer": 15,
         "group": 2,
         "token": 6,
         "expert": 4

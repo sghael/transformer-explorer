@@ -55,7 +55,7 @@ def validate(path):
 
     spec = json.loads((ROOT / "shared/model-spec.json").read_text())["architecture"]
     counts = Counter(node["extras"]["component"] for node in nodes)
-    for component, expected in [("decoder_layer", spec["num_layers"]),
+    for component, expected in [("decoder_layer", 1),
                                 ("query_head", spec["attention_heads"]),
                                 ("gqa_group", spec["kv_heads"]),
                                 ("k_head", spec["kv_heads"]), ("v_head", spec["kv_heads"]),
@@ -68,17 +68,16 @@ def validate(path):
     sentinel_mesh = gltf["meshes"][n("coordinate_sentinel")["mesh"]]
     accessor = gltf["accessors"][sentinel_mesh["primitives"][0]["attributes"]["POSITION"]]
     close([b-a for a,b in zip(accessor["min"], accessor["max"])], [.2,.4,.6])
-    pitch = LAYOUT["layer_pitch"]
+    assert spec["num_layers"] == 32, "The representative display must not alter model depth"
+    assert "layer_pitch" not in LAYOUT
     layer_dimensions = LAYOUT["layer_dimensions"]
     half_x = layer_dimensions[0]/2
-    first_x = -(spec["num_layers"]-1)/2*pitch
-    last_x = -first_x
-    layers = [n(f"layer_{i}") for i in range(spec["num_layers"])]
-    assert len({layer["mesh"] for layer in layers}) == 1, "Layer meshes should share data"
-    for i, layer in enumerate(layers):
-        assert layer["extras"]["layer"] == i
-        assert parents[ids[f"layer_{i}"]] == ids["stack"]
-        close(world(ids[f"layer_{i}"]), [first_x+i*pitch,0,0])
+    layer = n("representative_layer")
+    assert layer["extras"]["layer"] == -1 and layer["extras"]["representative"] is True
+    assert parents[ids["representative_layer"]] == ids["stack"]
+    close(world(ids["representative_layer"]), [0,0,0])
+    assert counts["collapsed_layer_flow"] == counts["layer_link"] == 0
+    assert not any(identifier.startswith(("layer_", "stack_gap_")) for identifier in ids)
     assert len({n(f"expert_{i}")["mesh"] for i in range(spec["experts"])}) == 1
     def mesh_bounds(identifier):
         mesh = gltf["meshes"][n(identifier)["mesh"]]
@@ -95,14 +94,14 @@ def validate(path):
         offset = 20 + json_length + 8 + view.get("byteOffset", 0) + accessor.get("byteOffset", 0)
         return [struct.unpack_from(fmt, blob, offset + i*stride) for i in range(accessor["count"])]
 
-    for identifier, dimensions in [("layer_0", layer_dimensions), ("expert_0", [1.5,1,.6])]:
+    for identifier, dimensions in [("representative_layer", layer_dimensions), ("expert_0", [1.5,1,.6])]:
         lower, upper = mesh_bounds(identifier)
         close([b-a for a,b in zip(lower, upper)], dimensions)
         assert n(identifier)["extras"]["geometry_profile"] == "skeletal_frame"
         primitive = gltf["meshes"][n(identifier)["mesh"]]["primitives"][0]
         positions = values(primitive["attributes"]["POSITION"])
         indices = [value[0] for value in values(primitive["indices"])]
-        bar = .0015 if identifier == "layer_0" else .025
+        bar = .0015 if identifier == "representative_layer" else .025
         assert math.isclose(n(identifier)["extras"]["frame_bar_thickness"], bar, abs_tol=1e-8)
         for start in range(0, len(indices), 3):
             centroid = [sum(positions[j][axis] for j in indices[start:start+3])/3 for axis in range(3)]
@@ -208,8 +207,8 @@ def validate(path):
         close([b-a for a,b in zip(lower,upper)],layout["size"])
     graph = [
         ("overview_input", [(macro_face("input",1),0,0),(macro_face("embedding",-1),0,0)]),
-        ("overview_embed", [(macro_face("embedding",1),0,0),(first_x-half_x,0,0)]),
-        ("overview_final", [(last_x+half_x,0,0),(macro_face("final_norm",-1),0,0)]),
+        ("overview_embed", [(macro_face("embedding",1),0,0),(-half_x,0,0)]),
+        ("overview_final", [(half_x,0,0),(macro_face("final_norm",-1),0,0)]),
         ("overview_norm", [(macro_face("final_norm",1),0,0),(macro_face("lm_head",-1),0,0)]),
         ("overview_output", [(macro_face("lm_head",1),0,0),(macro_face("output",-1),0,0)]),
     ]
@@ -217,8 +216,10 @@ def validate(path):
         assert points[0][0] < points[1][0]
         assert all(point[1] == point[2] == 0 for point in points)
         check_graph_path(identifier, points)
-    feedback = [(macro_face("output",1),0,0),(17,0,0),(17,0,LAYOUT["feedback_z"]),
-                (-16,0,LAYOUT["feedback_z"]),(-16,0,0),(macro_face("input",-1),0,0)]
+    feedback_right = macro_face("output",1) + .5
+    feedback_left = macro_face("input",-1) - .45
+    feedback = [(macro_face("output",1),0,0),(feedback_right,0,0),(feedback_right,0,LAYOUT["feedback_z"]),
+                (feedback_left,0,LAYOUT["feedback_z"]),(feedback_left,0,0),(macro_face("input",-1),0,0)]
     check_graph_path("generation_feedback", feedback, thickness=.025)
 
     def face(identifier, axis, side):
@@ -233,8 +234,8 @@ def validate(path):
         (graph[0][1][0], face("input", 0, "max")),
         (graph[0][1][-1], face("embedding", 0, "min")),
         (graph[1][1][0], face("embedding", 0, "max")),
-        (graph[1][1][-1], face("layer_0", 0, "min")),
-        (graph[2][1][0], face(f"layer_{spec['num_layers']-1}", 0, "max")),
+        (graph[1][1][-1], face("representative_layer", 0, "min")),
+        (graph[2][1][0], face("representative_layer", 0, "max")),
         (graph[2][1][-1], face("final_norm", 0, "min")),
         (graph[3][1][0], face("final_norm", 0, "max")),
         (graph[3][1][-1], face("lm_head", 0, "min")),
@@ -245,14 +246,6 @@ def validate(path):
     ]
     for endpoint, actual_face in endpoint_pairs:
         close(endpoint, actual_face)
-    for i in range(spec["num_layers"]):
-        summary = f"layer_summary_{i}"
-        assert n(summary)["extras"]["component"] == "collapsed_layer_flow"
-        check_graph_path(summary, [(-half_x,0,0),(half_x,0,0)], thickness=.0015, parent=f"layer_{i}")
-        if i < spec["num_layers"]-1:
-            gap = f"stack_gap_{i}"
-            assert n(gap)["extras"]["component"] == "layer_link"
-            check_graph_path(gap, [face(f"layer_{i}", 0, "max"), face(f"layer_{i+1}", 0, "min")], thickness=.0015, parent="stack")
     for identifier in ["norm1", "norm2", "final_norm"]:
         assert n(identifier)["extras"]["geometry_profile"] == "normalization_disk"
         dimensions = LAYOUT["macro_nodes"]["final_norm"]["size"] if identifier == "final_norm" else [.22,.5,.5]
@@ -398,9 +391,9 @@ def validate(path):
             anchors[node["name"]] = {"position": world(index),
                                      "target": [extras[f"target_{axis}"] for axis in "xyz"]}
     assert len(anchors) == 10
-    for name,position,target in [("CAM_OVERVIEW",[0,12,25],[0,0,0]),
-                                  ("CAM_INPUT",[-13.5,3,6],[-13.5,0,0]),
-                                  ("CAM_LM_HEAD",[14,3,6],[14,0,0])]:
+    for name,position,target in [("CAM_OVERVIEW",[0,7,14],[.5,0,0]),
+                                  ("CAM_INPUT",[-6.25,3,6],[-6.25,0,0]),
+                                  ("CAM_LM_HEAD",[7,3,6],[7,0,0])]:
         close(anchors[name]["position"], position)
         close(anchors[name]["target"], target)
     scene_report_path = ROOT / "artifacts/scene-report.json"

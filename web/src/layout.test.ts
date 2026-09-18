@@ -1,9 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { layout, macroPaths, stackEnds, layerHalf } from "./layout";
+import {
+  layout,
+  macroPaths,
+  stackEnds,
+  layerHalf,
+  representativeLayers,
+  representativeLayer,
+} from "./layout";
 import { layerOrigin, inLayer } from "./navigation";
 
-test("forward edges and layer ports share +X at every supported spacing", () => {
+test("forward edges meet the persistent representative frame along +X", () => {
   for (const spacing of [1, 1.5, 2, 3]) {
     const paths = macroPaths(spacing);
     for (const [id, points] of Object.entries(paths)) {
@@ -21,7 +28,7 @@ test("forward edges and layer ports share +X at every supported spacing", () => 
     const [first, last] = stackEnds(spacing);
     assert.equal(first, layerOrigin(0, spacing)[0] - layerHalf);
     assert.equal(last, layerOrigin(31, spacing)[0] + layerHalf);
-    for (let layer = 0; layer < 32; layer++) {
+    for (const layer of representativeLayers) {
       for (const side of [-1, 1]) {
         const port = inLayer([side * 11, 0, 0], layer, spacing);
         assert.ok(
@@ -46,4 +53,16 @@ test("generation returns on a separate orthogonal lane", () => {
         1,
       );
   }
+});
+
+test("legacy layer selections map to three representative examples", () => {
+  assert.deepEqual(representativeLayers, [0, 15, 31]);
+  for (let layer = 0; layer < 32; layer++) {
+    const selected = representativeLayer(layer);
+    assert.ok(representativeLayers.some((value) => value === selected));
+    assert.deepEqual(layerOrigin(selected, 1), [0, 0, 0]);
+  }
+  for (const selected of representativeLayers)
+    assert.equal(representativeLayer(selected), selected);
+  assert.equal(representativeLayer(11), 15);
 });

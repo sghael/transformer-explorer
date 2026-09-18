@@ -22,14 +22,7 @@ import {
   flightPose,
   type FlightLeg,
 } from "./navigation";
-import {
-  layout,
-  macroX,
-  macroPaths,
-  stackEnds,
-  layerHalf,
-  type MacroId,
-} from "./layout";
+import { layout, macroX, macroPaths, stackEnds, type MacroId } from "./layout";
 export type ContextMode = "full" | "muted" | "isolated";
 export type Selection = {
   layer: number;
@@ -275,8 +268,20 @@ function Effects({
           {label("embedding", compact ? "Embed" : "Embedding", [0, -0.9, 0])}
           {label(
             "stack",
-            `32 layers · selected ${p.state.layer + 1}`,
+            compact
+              ? `Layer ${p.state.layer + 1} / 32`
+              : `Layer ${p.state.layer + 1} of 32 · representative`,
             [0, 1.2, 0],
+          )}
+          {view === "overview" && p.state.layer > 0 && (
+            <Html position={[-3.3, -2, 0]} center style={labelStyle}>
+              {p.state.layer} earlier{compact ? "" : " layers"}
+            </Html>
+          )}
+          {view === "overview" && p.state.layer < 31 && (
+            <Html position={[3.3, -2, 0]} center style={labelStyle}>
+              {31 - p.state.layer} later{compact ? "" : " layers"}
+            </Html>
           )}
           {label("final_norm", compact ? "Norm" : "Final RMSNorm", [0, 0.8, 0])}
           {label("lm_head", "LM head", [0, compact ? 2.6 : 1.9, 0])}
@@ -324,18 +329,23 @@ function Effects({
       )}
       {view === "layer" && (
         <>
-          {label("norm1", "RMSNorm 1", [-0.5, -2, 0])}
+          {label("norm1", compact ? "Norm 1" : "RMSNorm 1", [-0.5, -2, 0])}
           {label("attention", "8 attention groups", [0, 2.5, 3])}
-          {label("add1", "+ residual 1", [-0.6, -0.9, 0])}
-          {label("norm2", "RMSNorm 2", [0.5, -2, 0])}
+          {label("add1", compact ? "+1" : "+ residual 1", [-0.6, -0.9, 0])}
+          {label("norm2", compact ? "Norm 2" : "RMSNorm 2", [0.5, -2, 0])}
           {label("router", "Router", [0, -0.8, 0])}
-          {label("experts", "8 parallel experts", [5, 1.8, 3.4])}
-          {label("merge", "Weighted merge", [0, -2, 0])}
-          {label("add2", "+ residual 2", [0.6, -0.9, 0])}
-          {label("residual_attention", "Attention bypass", [-5.5, 0.6, -5.4])}
-          {label("residual_moe", "MoE bypass", [4.5, 0.6, 5.4])}
           {label(
-            `layer_${p.state.layer}`,
+            "experts",
+            compact ? "8 experts" : "8 parallel experts",
+            [5, 1.8, 3.4],
+          )}
+          {label("merge", compact ? "Merge" : "Weighted merge", [0, -2, 0])}
+          {label("add2", compact ? "+2" : "+ residual 2", [0.6, -0.9, 0])}
+          {!compact &&
+            label("residual_attention", "Attention bypass", [-5.5, 0.6, -5.4])}
+          {!compact && label("residual_moe", "MoE bypass", [4.5, 0.6, 5.4])}
+          {label(
+            "representative_layer",
             `Layer ${p.state.layer + 1}`,
             [-0.5, -1.2, 0],
           )}
@@ -536,38 +546,18 @@ function Model(p: Props) {
   const routes = useRef<THREE.Group>(null);
   const contours = useRef<THREE.Group>(null);
   const outlines = useMemo(() => {
-    const points: Point[] = [],
-      colors: THREE.Color[] = [],
-      links: Point[] = [];
-    for (let layer = 0; layer < 32; layer++) {
-      const origin = layerOrigin(layer, p.state.spacing);
-      const corner = (bits: number): Point =>
-        layout.layer_dimensions.map(
-          (size, axis) =>
-            origin[axis] + ((bits & (1 << axis) ? 1 : -1) * size) / 2,
-        ) as Point;
-      for (let bits = 0; bits < 8; bits++)
-        for (let axis = 0; axis < 3; axis++) {
-          if (bits & (1 << axis)) continue;
+    const points: Point[] = [];
+    const corner = (bits: number): Point =>
+      layout.layer_dimensions.map(
+        (size, axis) => ((bits & (1 << axis) ? 1 : -1) * size) / 2,
+      ) as Point;
+    for (let bits = 0; bits < 8; bits++)
+      for (let axis = 0; axis < 3; axis++) {
+        if (!(bits & (1 << axis)))
           points.push(corner(bits), corner(bits | (1 << axis)));
-          const color = new THREE.Color(
-            layer === p.state.layer ? "#d0b87e" : "#6b8594",
-          );
-          colors.push(color, color);
-        }
-      if (layer !== p.state.layer)
-        links.push(
-          [origin[0] - layerHalf, 0, 0],
-          [origin[0] + layerHalf, 0, 0],
-        );
-      if (layer < 31)
-        links.push(
-          [origin[0] + layerHalf, 0, 0],
-          [layerOrigin(layer + 1, p.state.spacing)[0] - layerHalf, 0, 0],
-        );
-    }
-    return { points, colors, links };
-  }, [p.state.layer, p.state.spacing]);
+      }
+    return points;
+  }, []);
   const contextBase = useRef(
     new Map<
       THREE.Object3D,
@@ -673,7 +663,7 @@ function Model(p: Props) {
         id = d.id || o.name;
       o.visible =
         d.component !== "camera_anchor" && d.component !== "diagnostic";
-      if (id === `layer_summary_${p.state.layer}`) o.visible = false;
+
       if (o instanceof THREE.Mesh) {
         const m = o.material as THREE.MeshStandardMaterial;
         m.color.setHex(o.userData.baseColor);
@@ -692,15 +682,17 @@ function Model(p: Props) {
           m.map = null;
           m.needsUpdate = true;
         }
-        if (/^layer_\d+$/.test(id)) {
-          m.color.set(d.layer === p.state.layer ? "#d0b87e" : "#394a55");
-          m.emissive.set(d.layer === p.state.layer ? "#332a16" : "#000000");
+        if (id === "representative_layer") {
+          m.color.set("#d0b87e");
+          m.emissive.set("#332a16");
         }
         if (/^expert_\d+$/.test(id))
           m.color.set(p.top2.includes(d.expert) ? "#c8ad75" : "#596779");
       }
-      if (/^layer_\d+$/.test(id))
-        o.position.set(...layerOrigin(d.layer, p.state.spacing));
+      if (id === "representative_layer") {
+        d.layer = p.state.layer;
+        o.position.set(0, 0, 0);
+      }
     });
     const stack = nodes.get("stack")!;
     stack.position.set(0, 0, 0);
@@ -735,11 +727,6 @@ function Model(p: Props) {
       nodes.get(id)!.position.set(macroX(id, p.state.spacing), 0, 0);
     for (const [id, points] of Object.entries(macroPaths(p.state.spacing)))
       setPath(id, points);
-    for (let i = 0; i < 31; i++)
-      setPath(`stack_gap_${i}`, [
-        [layerOrigin(i, p.state.spacing)[0] + layerHalf, 0, 0],
-        [layerOrigin(i + 1, p.state.spacing)[0] - layerHalf, 0, 0],
-      ]);
     const score = nodes.get(`score_${p.state.group}`) as THREE.Mesh;
     if (!score.geometry.getAttribute("uv")) {
       score.geometry = score.geometry.clone();
@@ -920,7 +907,7 @@ function Model(p: Props) {
       layerCount:
         [...new Set(nodes.values())].filter(
           (o) => o.userData.component === "decoder_layer",
-        ).length === 32,
+        ).length === 1,
     };
     if (Object.values(checks).some((v) => !v))
       throw Error("GLB coordinate or metadata validation failed");
@@ -986,7 +973,7 @@ function Model(p: Props) {
     );
     const strength =
       detail && p.contextMode !== "full"
-        ? 1 - THREE.MathUtils.smoothstep(distance, 0.65, 2)
+        ? 1 - THREE.MathUtils.smoothstep(distance / FOCUS_SCALE, 30, 90)
         : 0;
     const contextKey = `${p.contextMode}:${p.state.view}:${p.state.group}:${p.state.expert}:${strength.toFixed(4)}`;
     if (contextApplied.current !== contextKey) {
@@ -1033,12 +1020,10 @@ function Model(p: Props) {
         contours.current.visible = !(
           strength > 0.95 && p.contextMode === "isolated"
         );
-        contours.current.children.forEach((line, i) => {
+        contours.current.children.forEach((line) => {
           const material = (line as THREE.Mesh)
             .material as THREE.MeshBasicMaterial;
-          material.color
-            .set(i ? "#91a8b1" : "#ffffff")
-            .lerp(subdued, strength * 0.94);
+          material.color.set("#d0b87e").lerp(subdued, strength * 0.94);
         });
       }
       contextApplied.current = contextKey;
@@ -1055,7 +1040,7 @@ function Model(p: Props) {
       geometries: gl.info.memory.geometries,
     };
     const selectedIds = [
-      ...Array.from({ length: 32 }, (_, i) => `layer_${i}`),
+      "representative_layer",
       "focus",
       "stack",
       `group_${p.state.group}`,
@@ -1176,16 +1161,8 @@ function Model(p: Props) {
     <>
       <group ref={contours} name="layer-contours">
         <Line
-          points={outlines.points}
-          vertexColors={outlines.colors}
-          color="white"
-          segments
-          lineWidth={0.9}
-          raycast={() => {}}
-        />
-        <Line
-          points={outlines.links}
-          color="#91a8b1"
+          points={outlines}
+          color="#d0b87e"
           segments
           lineWidth={0.9}
           raycast={() => {}}
@@ -1234,7 +1211,11 @@ function Model(p: Props) {
       />
       <AnnotationLevel
         origin={layerOrigin(p.state.layer, p.state.spacing)}
-        near={2}
+        near={
+          ["overview", "input", "output"].includes(p.state.view)
+            ? 0
+            : 90 * FOCUS_SCALE
+        }
       >
         <group
           position={
@@ -1269,26 +1250,33 @@ function Model(p: Props) {
           ["cache", [-4.9, -2.36, (p.state.group - 3.5) * 1.2], 0, 1.8],
           ["matrix", [-3.35, 1.45, (p.state.group - 3.5) * 1.2], 0, 3.5],
         ] as [View, Point, number, number][]
-      ).map(([view, center, near, far]) => (
-        <AnnotationLevel
-          key={view}
-          origin={layerOrigin(p.state.layer, p.state.spacing)}
-          scale={FOCUS_SCALE}
-          center={center}
-          near={near}
-          far={far}
-        >
-          <Effects
-            p={{
-              ...p,
-              flowPlaying: p.flowPlaying && p.state.view === view,
-              flowTime: p.state.view === view ? p.flowTime : 0,
-              state: { ...p.state, view },
-            }}
-            nodes={nodes}
-          />
-        </AnnotationLevel>
-      ))}
+      )
+        .filter(([view]) => view === p.state.view)
+        .map(([view, center, near, far]) => (
+          <AnnotationLevel
+            key={view}
+            origin={layerOrigin(p.state.layer, p.state.spacing)}
+            scale={FOCUS_SCALE}
+            center={center}
+            near={
+              view === "layer" &&
+              ["overview", "input", "output"].includes(p.state.view)
+                ? Infinity
+                : near
+            }
+            far={far}
+          >
+            <Effects
+              p={{
+                ...p,
+                flowPlaying: p.flowPlaying && p.state.view === view,
+                flowTime: p.state.view === view ? p.flowTime : 0,
+                state: { ...p.state, view },
+              }}
+              nodes={nodes}
+            />
+          </AnnotationLevel>
+        ))}
       <group
         ref={routes}
         position={layerOrigin(p.state.layer, p.state.spacing)}

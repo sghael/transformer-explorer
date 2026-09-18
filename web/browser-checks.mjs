@@ -323,7 +323,7 @@ try {
           const { scene } = window.__explorerInspect();
           const ids = new Set([
             "norm1",
-            "layer_11",
+            "representative_layer",
             "embedding",
             "q_8",
             "score_2",
@@ -361,7 +361,7 @@ try {
         [
           "Inside a layer",
           ["norm1", "q_8", "score_2"],
-          ["layer_11", "embedding"],
+          ["representative_layer", "embedding"],
         ],
         ["Attention group", ["q_8", "score_2"], ["score_3", "norm1"]],
       ]) {
@@ -439,9 +439,12 @@ try {
     },
   );
   await check(
-    "All 32 layers select through the compact layer selector",
+    "First, middle and last select one fixed representative interior",
     async () => {
-      for (let layer = 0; layer < 32; layer++) {
+      await expect(
+        page.getByLabel("Layer", { exact: true }).locator("option"),
+      ).toHaveText(["First · 1", "Middle · 16", "Last · 32"]);
+      for (const layer of [0, 15, 31]) {
         await page
           .getByLabel("Layer", { exact: true })
           .selectOption(String(layer));
@@ -457,8 +460,18 @@ try {
             page.evaluate(() => window.__explorerScene?.expandedCount),
           )
           .toBe(1);
+        await settle();
+        const scene = await page.evaluate(() => window.__explorerScene);
+        expect(scene.nodes.representative_layer.world).toEqual([0, 0, 0]);
+        expect(scene.nodes.representative_layer.semantic.layer).toBe(layer);
+        expect(scene.nodes.focus.world).toEqual([0, 0, 0]);
+        expect(scene.nodes.focus.scale).toEqual([
+          layout.focus_scale,
+          layout.focus_scale,
+          layout.focus_scale,
+        ]);
       }
-      return { selectedLayers: 32 };
+      return { selectedLayers: [0, 15, 31] };
     },
   );
   await check(
@@ -490,62 +503,71 @@ try {
       return tested;
     },
   );
-  await check("Stack spacing changes actual scene transforms", async () => {
-    await view("Overview");
-    await range(page.getByRole("slider", { name: "Stack spacing" }), 1);
-    await settle();
-    const before = await page.evaluate(() => window.__explorerScene);
-    await range(page.getByRole("slider", { name: "Stack spacing" }), 2.6);
-    await settle();
-    const after = await page.evaluate(() => window.__explorerScene);
-    expect((await snapshot(page)).state.spacing).toBe(2.6);
-    expect(before, "Scene transform inspection must be exposed").toBeTruthy();
-    for (let layer = 0; layer < 32; layer++) {
-      const id = `layer_${layer}`;
-      expect(before.nodes[id].world[0]).toBeCloseTo(
-        (layer - 15.5) * layout.layer_pitch,
-        6,
-      );
-      expect(after.nodes[id].world[0]).toBeCloseTo(
-        (layer - 15.5) * layout.layer_pitch * 2.6,
-        6,
-      );
-      expect(after.nodes[id].world.slice(1)).toEqual([0, 0]);
-      expect(before.nodes[id].world.slice(1)).toEqual([0, 0]);
-    }
-    for (const id of ["input", "embedding"])
-      expect(after.nodes[id].world[0]).toBeLessThan(before.nodes[id].world[0]);
-    for (const id of ["final_norm", "lm_head", "output"])
-      expect(after.nodes[id].world[0]).toBeGreaterThan(
-        before.nodes[id].world[0],
-      );
-    expect(after.nodes.embedding.world[0]).toBeLessThan(
-      after.nodes.layer_0.world[0],
-    );
-    expect(after.nodes.final_norm.world[0]).toBeGreaterThan(
-      after.nodes.layer_31.world[0],
-    );
-    expect(after.nodes.stack.world).toEqual(before.nodes.stack.world);
-    expect(after.nodes.stack.scale).toEqual(before.nodes.stack.scale);
-    await capture("overview-spaced");
-    return { before, after };
-  });
+  await check(
+    "Legacy layer and spacing contexts normalize to the representative choices",
+    async () => {
+      await expect(
+        page.getByRole("slider", { name: "Stack spacing" }),
+      ).toHaveCount(0);
+      const details = page.locator("details.review");
+      if ((await details.getAttribute("open")) === null)
+        await page
+          .getByText("Development view context", { exact: true })
+          .click();
+      await button("Copy current view").click();
+      const field = page.getByRole("textbox", { name: "View context" });
+      const saved = JSON.parse(await field.inputValue());
+      expect(saved.layoutVersion).toBe(2);
+      delete saved.layoutVersion;
+      for (const [legacyLayer, selected] of [
+        [2, 0],
+        [11, 15],
+        [29, 31],
+      ]) {
+        await field.fill(
+          JSON.stringify({
+            ...saved,
+            state: { ...saved.state, layer: legacyLayer, spacing: 2.6 },
+          }),
+        );
+        await button("Restore view").click();
+        await expect
+          .poll(async () => (await snapshot(page)).state.layer)
+          .toBe(selected);
+        expect((await snapshot(page)).state.spacing).toBe(1);
+      }
+      for (const time of [0, 14, 32, 50, 77]) {
+        await seek(time);
+        expect([0, 15, 31]).toContain((await snapshot(page)).state.layer);
+        expect((await snapshot(page)).state.spacing).toBe(1);
+      }
+      await button("Reset").click();
+      expect((await snapshot(page)).state.layer).toBe(15);
+      expect((await snapshot(page)).state.spacing).toBe(1);
+      await view("Overview");
+      const scene = await page.evaluate(() => window.__explorerScene);
+      expect(
+        Object.keys(scene.nodes).filter((id) => /^layer_\d+$|^gap_/.test(id)),
+      ).toEqual([]);
+      expect(scene.nodes.representative_layer.world).toEqual([0, 0, 0]);
+      await capture("overview-representative");
+    },
+  );
   await check(
     "Projected GLB layer mesh is selectable with the mouse",
     async () => {
       await page.getByLabel("Layer", { exact: true }).selectOption("31");
       await view("Overview");
-      await range(page.getByRole("slider", { name: "Stack spacing" }), 2.6);
       await settle();
       const node = await page.evaluate(
-        () => window.__explorerScene?.nodes?.layer_31,
+        () => window.__explorerScene?.nodes?.representative_layer,
       );
       expect(
         node,
         "Projected layer mesh diagnostic must be available",
       ).toBeTruthy();
       expect(node.visible).toBe(true);
-      const [x, y] = await surfacePoint("layer_31");
+      const [x, y] = await surfacePoint("representative_layer");
       const canvas = await page.locator("canvas").boundingBox();
       expect(x).toBeGreaterThan(canvas.x);
       expect(x).toBeLessThan(canvas.x + canvas.width);
@@ -560,7 +582,7 @@ try {
         .poll(() => page.evaluate(() => window.__explorerScene.expandedCount))
         .toBe(1);
       return {
-        semanticId: "layer_31",
+        semanticId: "representative_layer",
         clickedScreen: node.screen,
         world: node.world,
       };
@@ -599,12 +621,13 @@ try {
   });
   await check("Keyboard controls select layers and retain focus", async () => {
     const control = page.getByLabel("Layer", { exact: true });
-    await control.selectOption("10");
+    await control.selectOption("0");
     await control.focus();
     await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
     await expect(control).toBeFocused();
-    expect((await snapshot(page)).state.layer).toBe(11);
+    expect((await snapshot(page)).state.layer).toBe(15);
+    await page.getByLabel("KV group", { exact: true }).selectOption("5");
     await page.getByLabel("KV group", { exact: true }).focus();
     try {
       await page.keyboard.press("ArrowDown");
@@ -678,7 +701,7 @@ try {
         .inputValue();
       const parsed = JSON.parse(saved);
       expect(parsed.camera).toBeTruthy();
-      await page.getByLabel("Layer", { exact: true }).selectOption("2");
+      await page.getByLabel("Layer", { exact: true }).selectOption("0");
       await seek(69);
       await page.getByRole("textbox", { name: "View context" }).fill(saved);
       await button("Restore view").click();
@@ -807,24 +830,19 @@ try {
     },
   );
   await check(
-    "Compact, spaced, layer and attention rendering measurements",
+    "Overview, layer and attention rendering measurements",
     async () => {
       report.measurements = {
         rendererMode: "Chromium headless ANGLE SwiftShader software renderer",
         note: "Software rendering measurements are diagnostic; representative hardware client performance remains a separate check.",
         views: [],
       };
-      for (const [name, control, spacing] of [
-        ["compact", "Overview", 1],
-        ["spaced", "Overview", 2.6],
-        ["layer", "Inside a layer", 1],
-        ["attention", "Attention group", 1],
+      for (const [name, control] of [
+        ["overview", "Overview"],
+        ["layer", "Inside a layer"],
+        ["attention", "Attention group"],
       ]) {
         await view(control);
-        await range(
-          page.getByRole("slider", { name: "Stack spacing" }),
-          spacing,
-        );
         await settle();
         const result = await page.evaluate(async () => {
           const frames = [];

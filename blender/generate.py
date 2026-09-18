@@ -183,20 +183,10 @@ def generate():
     root = node("model", "model", name="MODEL_ROOT", interactive=False, lod=0,
                 asset_version="1.0.0", illustrative=True)
     stack = node("stack", "layer_stack", root, name="LAYER_STACK", lod=0)
-    pitch = LAYOUT["layer_pitch"]
     dimensions = LAYOUT["layer_dimensions"]
     half_x = dimensions[0] / 2
-    first_x = -(A["num_layers"]-1)/2 * pitch
-    last_x = -first_x
-    for i in range(A["num_layers"]):
-        x = first_x + i*pitch
-        layer = box(f"layer_{i}", "decoder_layer", stack, (x,0,0),
-                    dimensions, "slate", layer=i, lod=0)
-        path(f"layer_summary_{i}", layer, [(-half_x,0,0),(half_x,0,0)],
-             component="collapsed_layer_flow", layer=i, lod=0, thickness=.0015)
-        if i < A["num_layers"] - 1:
-            path(f"stack_gap_{i}", stack, [(x+half_x,0,0),(x+pitch-half_x,0,0)],
-                 component="layer_link", layer=i, lod=0, thickness=.0015)
+    box("representative_layer", "decoder_layer", stack, (0,0,0),
+        dimensions, "slate", layer=-1, lod=0, representative=True)
     for identifier, color, component in [
         ("input", "white", "input"), ("embedding", "teal", "embedding"),
         ("final_norm", "amber", "rms_norm"), ("lm_head", "blue", "lm_head"),
@@ -209,16 +199,18 @@ def generate():
         return layout["x"] + side * layout["size"][0]/2
     for identifier, start, end in [
         ("overview_input", macro_face("input",1), macro_face("embedding",-1)),
-        ("overview_embed", macro_face("embedding",1), first_x-half_x),
-        ("overview_final", last_x+half_x, macro_face("final_norm",-1)),
+        ("overview_embed", macro_face("embedding",1), -half_x),
+        ("overview_final", half_x, macro_face("final_norm",-1)),
         ("overview_norm", macro_face("final_norm",1), macro_face("lm_head",-1)),
         ("overview_output", macro_face("lm_head",1), macro_face("output",-1)),
     ]:
         assert start < end
         path(identifier, root, [(start,0,0),(end,0,0)], lod=0)
+    feedback_right = macro_face("output",1) + .5
+    feedback_left = macro_face("input",-1) - .45
     path("generation_feedback", root,
-         [(macro_face("output",1),0,0),(17,0,0),(17,0,LAYOUT["feedback_z"]),
-          (-16,0,LAYOUT["feedback_z"]),(-16,0,0),(macro_face("input",-1),0,0)],
+         [(macro_face("output",1),0,0),(feedback_right,0,0),(feedback_right,0,LAYOUT["feedback_z"]),
+          (feedback_left,0,LAYOUT["feedback_z"]),(feedback_left,0,0),(macro_face("input",-1),0,0)],
          thickness=.025, lod=0)
 
     focus = node("focus", "focus_layer", root, name="FOCUS_LAYER", interactive=False)
@@ -348,14 +340,14 @@ def generate():
                  thickness=.055*.3, expert=e)
 
     anchors = {
-        "OVERVIEW": ((0,12,25),(0,0,0)),
+        "OVERVIEW": ((0,7,14),(.5,0,0)),
         "LAYER": ((17,13,20),(1,0,0)),
         "ATTENTION": ((.8,6,10),(-5,0,0)),
         "CACHE": ((-1,2,8),(-4.7,-2.2,0)),
         "MOE": ((13,8,13),(5,0,0)),
         "EXPERT": ((10,3,8),(5,-2,0)),
-        "INPUT": ((-13.5,3,6),(-13.5,0,0)),
-        "LM_HEAD": ((14,3,6),(14,0,0)),
+        "INPUT": ((-6.25,3,6),(-6.25,0,0)),
+        "LM_HEAD": ((7,3,6),(7,0,0)),
         "MATRIX": ((-3.35,1.45,9),(-3.35,1.45,0)),
         "TEST": ((4,5,6),(1,2,3)),
     }

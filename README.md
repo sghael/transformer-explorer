@@ -49,7 +49,7 @@ See the [Mixtral paper](https://arxiv.org/abs/2401.04088) for the per-token, per
 
 ## Compact layer stack and semantic zoom
 
-Render all 32 layers as individually selectable open modules in a left-to-right sequence. Clicking any layer flies into a reusable detailed assembly nested inside that slice. Keep surrounding slices present and the selected layer number visible; navigation must not fade or relocate the graph. Use zero-based indices in data and Layer 1–32 in the interface.
+Render one enlarged representative open module on the left-to-right sequence. Labeled spans before and after it account for the other 31 layers. Offer First (1), Middle (16), and Last (32) examples. Enter the reusable detailed assembly inside the same frame; keep the selected layer number visible and the graph fixed during navigation. Use zero-based indices in data.
 
 Semantic zoom changes which concepts are visible as the visitor moves closer:
 
@@ -65,7 +65,7 @@ Use smooth transitions and stable thresholds to avoid flickering between levels.
 
 Use a dark neutral environment, restrained emissive highlights, simple matrix slabs, and a clear flow direction. Shape, labels, and placement must convey meaning alongside color. Use thin matrix surfaces with dimension labels and sampled heatmaps. Separate related surfaces in depth to reveal repetition and shared connections; label what each axis means. Avoid rendering individual parameters or thousands of matrix cells.
 
-The default view is an oblique, genuinely three-dimensional stack with visible left-to-right layer spacing. Visitors can spread the stack, fly inside one layer, inspect its head groups or expert bank, and return to the same location. A face-on matrix view and HTML detail panel provide readable values without losing the selected layer, group, or token. Keep a compact stack locator visible during close inspection. A perspective-styled flat diagram alone does not meet the spatial contract.
+The default view is an oblique three-dimensional graph with one enlarged representative decoder layer. Labeled spans compress the other 31 layers. Visitors can choose First, Middle, or Last, fly inside that representative layer, inspect its head groups or expert bank, and return to the same location. A face-on matrix view and HTML detail panel provide readable values without losing the selected layer, group, or token. Keep a compact stack locator visible during close inspection. A perspective-styled flat diagram alone does not meet the spatial contract.
 
 ## Attention, GQA, RoPE, and caching
 
@@ -120,7 +120,7 @@ Names such as `MODEL_ROOT`, `LAYER_STACK`, `FOCUS_LAYER`, `ATTENTION_ROOT`, `KV_
 
 Use Vite, React, TypeScript, Three.js, `@react-three/fiber`, and `@react-three/drei`. Load the GLB, interpret node metadata, and render labels and educational panels in HTML for readable, accessible text.
 
-**Explore mode:** orbit, pan, zoom, hover, click-to-focus, layer selection, stack spacing, component explanations, and explicit Overview / Layer / Matrix views. Preserve the selected layer, head group, and token across views. Provide reset, back-to-layer, a persistent location indicator, and keyboard alternatives for essential actions. Camera travel helps orientation but is not required to reach a view.
+**Explore mode:** orbit, pan, zoom, hover, click-to-focus, representative-layer selection, component explanations, and explicit Overview / Layer / Matrix views. Preserve the selected layer, head group, and token across views. Provide reset, back-to-layer, a persistent location indicator, and keyboard alternatives for essential actions. Camera travel helps orientation but is not required to reach a view.
 
 **Guided Tour:** play/pause, restart, previous/next chapter, scrubber, speed, and return to Explore. Paused camera movement should remain under the visitor's control. Resume should transition smoothly to the tour camera. Respect reduced-motion settings and provide readable captions.
 
@@ -189,7 +189,7 @@ Use the [agent workflow](docs/agent-workflow.md) to select reasoning effort and 
 
 ## Validation for implementation
 
-Regenerate from a clean scene, validate GLB export and metadata, and build the production web app. Check all 32 layer selections, exactly one expanded assembly, four Q heads per KV group, causal masking, and two selected experts with normalized merge weights.
+Regenerate from a clean scene, validate GLB export and metadata, and build the production web app. Check first, middle, and last representative selections, exactly one expanded assembly, four Q heads per KV group, causal masking, and two selected experts with normalized merge weights.
 
 Verify cache creation during prefill and reuse during decode, deterministic results at a given timeline time, readable labels, orbit/pan/zoom, picking, pause/resume, seeking, speed changes, and reduced motion. Inspect browser errors, duplicate geometry, and rendering performance. Record what was actually tested.
 
