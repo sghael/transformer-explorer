@@ -17,6 +17,7 @@ const artifacts = fileURLToPath(
 await mkdir(artifacts, { recursive: true });
 const report = {
   started: new Date().toISOString(),
+  filter: process.env.BROWSER_CHECK_FILTER ?? null,
   viewport: { width: 1440, height: 1100 },
   checks: [],
   screenshots: [],
@@ -62,6 +63,12 @@ const saveProgress = async () => {
   );
 };
 const check = async (name, action) => {
+  if (
+    report.filter &&
+    !new RegExp(report.filter).test(name) &&
+    !name.startsWith("No browser")
+  )
+    return;
   const start = Date.now();
   report.activeCheck = name;
   console.log(`START ${name}`);
@@ -265,8 +272,8 @@ const settle = async (target = page) => {
 };
 const button = (name) => page.getByRole("button", { name, exact: true });
 const view = async (name) => {
-  await page.getByLabel("Surroundings", { exact: true }).selectOption("full");
   await button(name).click();
+  await page.getByLabel("Surroundings", { exact: true }).selectOption("full");
   await settle();
 };
 const range = async (locator, value) => {
@@ -299,6 +306,151 @@ try {
   await settle();
   report.build = (await snapshot(page)).build;
   await check(
+    "Automatic attention isolation preserves explicit overrides and restored context",
+    async () => {
+      const control = page.getByLabel("Surroundings", { exact: true });
+      await button("Reset").click();
+      await expect(control).toHaveValue("muted");
+      for (const label of [
+        "Attention group",
+        "KV cache",
+        "Read attention matrix",
+      ]) {
+        await button(label).click();
+        await expect(control).toHaveValue("isolated");
+        await settle();
+        expect(
+          await page.evaluate(() => window.__explorerScene.contextMode),
+        ).toBe("isolated");
+        await control.selectOption("full");
+        await page.getByLabel("Token", { exact: true }).selectOption("6");
+        await page.getByLabel("KV group", { exact: true }).selectOption("3");
+        await expect(control).toHaveValue("full");
+      }
+      await button("Inside a layer").click();
+      await expect(control).toHaveValue("muted");
+      await button("Attention group").click();
+      await expect(control).toHaveValue("isolated");
+      await control.selectOption("muted");
+      await seek(32);
+      await expect(control).toHaveValue("muted");
+      await seek(50);
+      await expect(control).toHaveValue("muted");
+      await seek(32);
+      await expect(control).toHaveValue("isolated");
+      await control.selectOption("full");
+      const details = page.locator("details.review");
+      if ((await details.getAttribute("open")) === null)
+        await page
+          .getByText("Development view context", { exact: true })
+          .click();
+      await button("Copy current view").click();
+      const field = page.getByRole("textbox", { name: "View context" });
+      const saved = await field.inputValue();
+      await button("Inside a layer").click();
+      await field.fill(saved);
+      await button("Restore view").click();
+      await expect(control).toHaveValue("full");
+      await settle();
+      expect((await snapshot(page)).state.view).toBe("attention");
+      const canvas = await page.locator("canvas").boundingBox();
+      await page.mouse.move(
+        canvas.x + canvas.width * 0.5,
+        canvas.y + canvas.height * 0.5,
+      );
+      await page.mouse.down();
+      await page.mouse.move(
+        canvas.x + canvas.width * 0.6,
+        canvas.y + canvas.height * 0.55,
+        { steps: 8 },
+      );
+      await page.mouse.up();
+      await expect(control).toHaveValue("full");
+      await seek(28.8);
+      await expect(control).toHaveValue("muted");
+      await button("Play tour").click();
+      await expect
+        .poll(async () => (await snapshot(page)).state.view, { timeout: 5000 })
+        .toBe("attention");
+      await button("Pause tour").click();
+      await expect(control).toHaveValue("isolated");
+      await settle();
+      await capture("attention-automatic-isolation");
+      await button("Reset").click();
+      await expect(control).toHaveValue("muted");
+    },
+  );
+  await check(
+    "Attention labels remain mounted at near and far camera distances",
+    async () => {
+      await button("Reset").click();
+      await button("Attention group").click();
+      await settle();
+      const details = page.locator("details.review");
+      if ((await details.getAttribute("open")) === null)
+        await page
+          .getByText("Development view context", { exact: true })
+          .click();
+      await button("Copy current view").click();
+      const field = page.getByRole("textbox", { name: "View context" });
+      const saved = JSON.parse(await field.inputValue());
+      const labels = [
+        /^Query projections/,
+        /^Key projection/,
+        /^Value projection/,
+        /^RoPE · Q$/,
+        /^RoPE · K$/,
+        /^Attention weights · one head$/,
+        /^Weighted value sum$/,
+        /^K cache$/,
+        /^V cache$/,
+      ];
+      const evidence = [];
+      for (const factor of [1, 0.45, 3]) {
+        const camera = {
+          ...saved.camera,
+          position: saved.camera.position.map(
+            (value, axis) =>
+              saved.camera.target[axis] +
+              factor * (value - saved.camera.target[axis]),
+          ),
+        };
+        await field.fill(JSON.stringify({ ...saved, camera }));
+        await button("Restore view").click();
+        await settle();
+        for (const label of labels)
+          await expect(
+            page.locator(".canvas span").filter({ hasText: label }),
+          ).toBeVisible();
+        await expect
+          .poll(async () => {
+            const current = await snapshot(page);
+            return Math.max(
+              ...["position", "target"].flatMap((field) =>
+                current.camera[field].map((value, axis) =>
+                  Math.abs(value - camera[field][axis]),
+                ),
+              ),
+            );
+          })
+          .toBeLessThan(0.00005);
+        const actual = await snapshot(page);
+        expect(actual.state.view).toBe("attention");
+        expect(actual.contextMode).toBe("isolated");
+        actual.camera.target.forEach((value, axis) =>
+          expect(value).toBeCloseTo(saved.camera.target[axis], 4),
+        );
+        actual.camera.position.forEach((value, axis) =>
+          expect(value).toBeCloseTo(camera.position[axis], 4),
+        );
+        await capture(`attention-labels-distance-${factor}`);
+        evidence.push({ factor, camera: actual.camera });
+      }
+      await button("Reset").click();
+      return evidence;
+    },
+  );
+  await check(
     "Loaded GLB preserves coordinates, dimensions, camera anchor and layer count",
     async () => {
       const ready = (await snapshot(page)).ready;
@@ -315,6 +467,7 @@ try {
   await check(
     "Surroundings modes preserve geometry, isolate the focus, and round-trip view context",
     async () => {
+      await button("Reset").click();
       const control = page.getByLabel("Surroundings", { exact: true });
       await expect(control).toHaveValue("muted");
       expect((await snapshot(page)).contextMode).toBe("muted");
@@ -426,7 +579,7 @@ try {
       delete legacy.contextMode;
       await field.fill(JSON.stringify(legacy));
       await button("Restore view").click();
-      await expect(control).toHaveValue("muted");
+      await expect(control).toHaveValue("isolated");
       await mode("full");
       await field.fill(JSON.stringify({ ...saved, contextMode: "invalid" }));
       await button("Restore view").click();

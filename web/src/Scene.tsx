@@ -250,7 +250,7 @@ function Effects({
       key={id + text}
       node={nodes.get(id)}
       offset={offset}
-      maxDistance={["attention", "cache"].includes(view) ? 20 : Infinity}
+      maxDistance={view === "cache" ? 20 : Infinity}
     >
       {text}
     </Label>
@@ -378,27 +378,38 @@ function Effects({
           {label(
             `q_${g * 4}`,
             compact
-              ? `Q ${g * 4 + 1}–${g * 4 + 4}`
-              : `Q projections · heads ${g * 4 + 1}–${g * 4 + 4}`,
-            [-0.25, 1.05, 0.315],
+              ? "Q · queries"
+              : `Query projections (Q) · heads ${g * 4 + 1}–${g * 4 + 4}`,
+            [-0.95, 0.1, 0],
           )}
-          {label(`k_${g}`, compact ? "K" : "Shared K", [-0.2, -0.85, 0.28])}
-          {label(`v_${g}`, compact ? "V" : "Shared V", [0.2, -0.85, 0])}
           {label(
-            `rope_k_${g}`,
-            compact ? "RoPE" : "RoPE · Q/K",
-            [0.05, 0.35, -0.18],
+            `k_${g}`,
+            compact ? "K · key" : "Key projection (K)",
+            [-0.4, -1, 0.5],
           )}
+          {label(
+            `v_${g}`,
+            compact ? "V · value" : "Value projection (V)",
+            [0.4, -1, 0.5],
+          )}
+          {label(`rope_q_${g * 4}`, "RoPE · Q", [
+            -0.5,
+            compact ? 1.05 : 0.5,
+            0,
+          ])}
+          {label(`rope_k_${g}`, "RoPE · K", [0.5, 0.6, 0])}
           {label(
             `score_${g}`,
-            compact ? "Weights" : "Attention weights · one head",
-            [0.6, 0.65, 0],
+            compact ? "Attention weights" : "Attention weights · one head",
+            [0.7, 0.65, 0],
           )}
           {label(
             `weighted_sum_${g}`,
-            compact ? "Σ V" : "Weighted V sum",
-            [0.75, -0.3, 0],
+            compact ? "Weighted V sum" : "Weighted value sum",
+            [0.95, -0.35, 0],
           )}
+          {label(`cache_k_${g}`, "K cache", [-0.3, compact ? -0.45 : -0.75, 0])}
+          {label(`cache_v_${g}`, "V cache", [0.3, compact ? -1.1 : -0.75, 0])}
         </>
       )}
       {view === "matrix" && (
@@ -789,8 +800,8 @@ function Model(p: Props) {
     let target = [0, 0.6, 0],
       position = [4, 7, 16 * distanceScale];
     if (view === "attention") {
-      target = [-4.8, 0.65, z];
-      position = [-4.8, 5.5, z + 0.65];
+      target = [-4.8, -0.25, z];
+      position = [-1.8, 2.8, z + 7];
     }
     if (view === "cache") {
       target = [-4.9, -2.36, z];
@@ -1261,7 +1272,7 @@ function Model(p: Props) {
       {(
         [
           ["layer", [0, 0.6, 0], 17, 100],
-          ["attention", [-5, 0.5, (p.state.group - 3.5) * 1.2], 3.5, 13],
+          ["attention", [-5, 0.5, (p.state.group - 3.5) * 1.2], 0, Infinity],
           [
             "router",
             [5, 0, 0],

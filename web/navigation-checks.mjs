@@ -130,6 +130,9 @@ try {
         .selectOption("full");
       await settle();
       await button("Attention group").click();
+      await page
+        .getByLabel("Surroundings", { exact: true })
+        .selectOption("full");
       await settle();
       let saved;
       if (interruption === "restore-inbound") {

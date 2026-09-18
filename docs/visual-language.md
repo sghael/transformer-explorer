@@ -57,3 +57,5 @@ These are project applications of [Tufte's sparkline principles](https://www.edw
 ## Surroundings experiment
 
 The development preview offers Full context, Muted context, and Hide surroundings. Muting darkens outside geometry heavily and suppresses its labels near the selected module; it leaves material opacity at one. Hiding is an explicit cutaway of the same scene. The selected computation and camera pose do not move when the control changes. The overview retains the complete graph in every mode.
+
+Attention inspection defaults to Hide surroundings so adjacent groups cannot obstruct the selected computation. Users may restore context manually. Direct labels identify query/key/value projections, Q and K RoPE, attention weights, the weighted value sum, and both cache sheets. These labels persist while zooming and orbiting within attention inspection; narrow labels use shorter wording and staggered positions.
