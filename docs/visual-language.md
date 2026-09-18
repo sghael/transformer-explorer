@@ -32,7 +32,7 @@ Four query projections and a shared K/V pair receive the same normalized input. 
 
 Use a dark neutral canvas, off-white text, cyan for activations, muted gold for selected routes and slate for inactive geometry. Shape, arrows, numbered controls and text supplement color. Learned weights and runtime activations are explicitly labeled. Interface typography uses the system sans-serif stack, 16px body text, short line lengths and tabular numbers. Selected controls have both border and pressed state. Keyboard focus uses a conspicuous outline.
 
-Desktop places the scene beside a reading panel. Narrow screens place the scene above the panel; controls wrap and the locator remains reachable. Essential labels stay in HTML at fixed screen sizes. Secondary equations appear on demand. Reduced motion reaches the same views immediately; it does not remove concepts or controls.
+Component navigation runs above the model. Desktop places the scene beside a wider, independently scrolling reading panel. Narrow screens place the explanation below the model and before playback controls; the navigation row scrolls horizontally and the locator remains reachable. Essential labels stay in HTML at fixed screen sizes. Secondary equations appear on demand. Reduced motion reaches the same views immediately; it does not remove concepts or controls.
 
 Visual acceptance requires the actual loaded GLB at two oblique angles, expanded layer, attention, matrix, routing and narrow view. Original wireframes specify composition; browser evidence determines acceptance.
 

@@ -312,7 +312,7 @@ try {
       await button("Reset").click();
       await expect(control).toHaveValue("muted");
       for (const label of [
-        "Attention group",
+        "Attention heads",
         "KV cache",
         "Read attention matrix",
       ]) {
@@ -329,7 +329,7 @@ try {
       }
       await button("Inside a layer").click();
       await expect(control).toHaveValue("muted");
-      await button("Attention group").click();
+      await button("Attention heads").click();
       await expect(control).toHaveValue("isolated");
       await control.selectOption("muted");
       await seek(32);
@@ -384,7 +384,7 @@ try {
     "Attention labels remain mounted at near and far camera distances",
     async () => {
       await button("Reset").click();
-      await button("Attention group").click();
+      await button("Attention heads").click();
       await settle();
       const details = page.locator("details.review");
       if ((await details.getAttribute("open")) === null)
@@ -516,7 +516,7 @@ try {
           ["norm1", "q_8", "score_2"],
           ["representative_layer", "embedding"],
         ],
-        ["Attention group", ["q_8", "score_2"], ["score_3", "norm1"]],
+        ["Attention heads", ["q_8", "score_2"], ["score_3", "norm1"]],
       ]) {
         await view(name);
         await mode("full");
@@ -641,7 +641,7 @@ try {
         for (const [label, expectedView] of [
           ["Overview", "overview"],
           ["Inside a layer", "layer"],
-          ["Attention group", "attention"],
+          ["Attention heads", "attention"],
           ["Read attention matrix", "matrix"],
           ["Back to layer", "layer"],
           ["Overview", "overview"],
@@ -843,7 +843,7 @@ try {
   await check(
     "Context copy and restore return selection, timeline and camera",
     async () => {
-      await view("Attention group");
+      await view("Attention heads");
       if ((await page.locator("details.review").getAttribute("open")) === null)
         await page
           .getByText("Development view context", { exact: true })
@@ -993,7 +993,7 @@ try {
       for (const [name, control] of [
         ["overview", "Overview"],
         ["layer", "Inside a layer"],
-        ["attention", "Attention group"],
+        ["attention", "Attention heads"],
       ]) {
         await view(control);
         await settle();

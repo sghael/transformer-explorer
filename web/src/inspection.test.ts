@@ -42,3 +42,37 @@ test("RMSNorm rejects invalid dimensions and unstable inputs", () => {
   assert.throws(() => rmsNorm([Infinity], [1]), RangeError);
   assert.throws(() => rmsNorm([1], [1], 0), RangeError);
 });
+
+test("final RMSNorm is model-wide with token-dependent activations and fixed scales", () => {
+  const reference = inspectRmsNorm(0, 0, "final");
+  for (const layer of [0, 15, 31]) {
+    for (const token of [0, 4, 7]) {
+      const result = inspectRmsNorm(layer, token, "final");
+      assert.deepEqual(result, inspectRmsNorm(0, token, "final"));
+      assert.deepEqual(result.gamma, reference.gamma);
+      assert.equal(result.epsilon, 1e-5);
+      const denominator = Math.sqrt(
+        result.values.reduce((sum, value) => sum + value ** 2, 0) / 8 + 1e-5,
+      );
+      result.output.forEach((value, channel) =>
+        close(
+          value,
+          (result.gamma[channel] * result.values[channel]) / denominator,
+        ),
+      );
+      for (const stage of [1, 2] as const) {
+        assert.notDeepEqual(
+          result.values,
+          inspectRmsNorm(layer, token, stage).values,
+        );
+        assert.notDeepEqual(
+          result.gamma,
+          inspectRmsNorm(layer, token, stage).gamma,
+        );
+      }
+    }
+  }
+  assert.notDeepEqual(reference.values, inspectRmsNorm(0, 7, "final").values);
+  assert.throws(() => inspectRmsNorm(-1, 0, "final"), RangeError);
+  assert.throws(() => inspectRmsNorm(0, 8, "final"), RangeError);
+});

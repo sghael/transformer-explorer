@@ -33,7 +33,7 @@ export function rmsNorm(values: number[], gamma: number[], epsilon = 0.00001) {
 export function inspectRmsNorm(
   layer: number,
   token: number,
-  stage: 1 | 2 = 1,
+  stage: 1 | 2 | "final" = 1,
   seed = 1729,
 ) {
   if (
@@ -45,12 +45,18 @@ export function inspectRmsNorm(
     token >= 8
   )
     throw new RangeError("Select a valid layer and illustrative token.");
+  if (![1, 2, "final"].includes(stage))
+    throw new RangeError("Select a valid RMSNorm stage.");
+  // Final normalization is a single model-wide operation, independent of which
+  // representative decoder layer is selected in the viewer.
+  const stageIndex = stage === "final" ? 3 : stage;
+  const layerIndex = stage === "final" ? 0 : layer + 1;
   const random = (channel: number, kind: number, activation = true) => {
     let hash =
       seed ^
-      Math.imul(layer + 1, 73856093) ^
+      Math.imul(layerIndex, 73856093) ^
       (activation ? Math.imul(token + 1, 19349663) : 0) ^
-      Math.imul(stage, 83492791) ^
+      Math.imul(stageIndex, 83492791) ^
       Math.imul(channel + 1, kind);
     hash ^= hash >>> 16;
     hash = Math.imul(hash, 0x45d9f3b);

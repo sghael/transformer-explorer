@@ -410,7 +410,7 @@ try {
     "Persistent cache connectors retain both visible endpoints across camera views",
     async () => {
       const evidence = [];
-      for (const control of ["Inside a layer", "Attention group", "KV cache"]) {
+      for (const control of ["Inside a layer", "Attention heads", "KV cache"]) {
         await view(control);
         const current = await scene();
         // Inspect the actual post-RoPE/write/read graph, including nodes outside
@@ -514,7 +514,7 @@ try {
     "Causal attention data identifies allowed keys and masks future positions",
     async () => {
       const evidence = [];
-      await view("Attention group");
+      await view("Attention heads");
       for (const token of [0, 3, 7]) {
         await page
           .getByLabel("Token", { exact: true })
@@ -674,7 +674,7 @@ try {
       for (const width of [1440, 390]) {
         await page.setViewportSize({ width, height: 1000 });
         for (const [control, selector, name] of [
-          ["Attention group", ".evidence-strip", "attention"],
+          ["Attention heads", ".evidence-strip", "attention"],
           ["Expert routing", ".router-evidence-table", "router"],
         ]) {
           await view(control);

@@ -64,13 +64,58 @@ header button {
 }
 main {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
-  max-width: 1800px;
+  grid-template-columns: minmax(0, 1.45fr) minmax(420px, 1fr);
+  max-width: 1920px;
   margin: auto;
 }
 .exhibit {
   min-width: 0;
-  padding: 25px 24px;
+  padding: 24px;
+  grid-column: 1;
+  grid-row: 2;
+}
+.component-nav {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 16px 24px;
+  border-bottom: 1px solid #31414c;
+}
+.component-nav button {
+  min-height: 44px;
+  font-size: 13px;
+  padding: 8px 12px;
+}
+.playback {
+  grid-column: 1;
+  grid-row: 3;
+  min-width: 0;
+  padding: 0 24px 24px;
+}
+.explanation-intro {
+  font-size: 16px;
+  line-height: 1.65;
+  margin: 0 0 24px;
+}
+.norm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 24px 0 16px;
+}
+.norm-actions button {
+  min-height: 44px;
+  font-size: 13px;
+}
+::selection {
+  background: #edc485;
+  color: #101820;
+}
+a {
+  color: #a3dce1;
+  text-underline-offset: 3px;
 }
 small {
   font-size: 11px;
@@ -211,6 +256,8 @@ input[type="range"] {
   max-width: 80ch;
 }
 aside {
+  grid-column: 2;
+  grid-row: 2 / 4;
   padding: 28px 24px;
   border-left: 1px solid #31414c;
   background: #15202a;
@@ -344,7 +391,19 @@ code {
 }
 @media (max-width: 900px) {
   main {
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
+  }
+  .component-nav {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding: 12px;
+  }
+  .component-nav button {
+    flex: 0 0 auto;
+  }
+  .playback {
+    padding-top: 24px;
   }
   .canvas {
     height: 440px;
@@ -682,4 +741,33 @@ code {
 }
 .attention-evidence-table caption {
   margin-bottom: 5px;
+}
+
+/* Keep a long calculation readable beside the live model. */
+@media (min-width: 901px) {
+  aside {
+    max-height: calc(100vh - 180px);
+    min-height: 560px;
+    overflow-y: auto;
+    scrollbar-color: #637b89 #15202a;
+    scrollbar-width: thin;
+  }
+}
+.rms-vector-table {
+  overflow-x: auto;
+  margin-top: 16px;
+}
+.rms-vector-table table {
+  font-size: 12px;
+}
+.rms-vector-table th button {
+  min-width: 36px;
+  min-height: 36px;
+}
+.rms-inspection .formula {
+  font-size: 15px;
+}
+.location .current-location {
+  font-size: inherit;
+  color: inherit;
 }

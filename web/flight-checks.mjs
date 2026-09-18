@@ -38,10 +38,10 @@ const distance = (a, b) => Math.hypot(...a.map((value, i) => value - b[i]));
 const names = {
   overview: "Model overview",
   layer: "Inside a layer",
-  attention: "Attention group",
+  attention: "Attention heads",
   matrix: "Read attention matrix",
   router: "Expert routing",
-  expert: "Inside an expert",
+  expert: "Expert feed-forward network",
   output: "Output & generation",
 };
 try {
