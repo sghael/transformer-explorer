@@ -438,29 +438,37 @@ try {
       return evidence;
     },
   );
-  await check("All 32 layers select through the layer locator", async () => {
-    for (let layer = 0; layer < 32; layer++) {
-      await button(`Select layer ${layer + 1}`).click();
-      await expect
-        .poll(async () => (await snapshot(page)).state.layer)
-        .toBe(layer);
-      await expect(button(`Select layer ${layer + 1}`)).toHaveAttribute(
-        "aria-pressed",
-        "true",
-      );
-      expect((await snapshot(page)).state.view).toBe("layer");
-      await expect
-        .poll(() => page.evaluate(() => window.__explorerScene?.expandedCount))
-        .toBe(1);
-    }
-    return { selectedLayers: 32 };
-  });
+  await check(
+    "All 32 layers select through the compact layer selector",
+    async () => {
+      for (let layer = 0; layer < 32; layer++) {
+        await page
+          .getByLabel("Layer", { exact: true })
+          .selectOption(String(layer));
+        await expect
+          .poll(async () => (await snapshot(page)).state.layer)
+          .toBe(layer);
+        await expect(page.getByLabel("Layer", { exact: true })).toHaveValue(
+          String(layer),
+        );
+        expect((await snapshot(page)).state.view).toBe("layer");
+        await expect
+          .poll(() =>
+            page.evaluate(() => window.__explorerScene?.expandedCount),
+          )
+          .toBe(1);
+      }
+      return { selectedLayers: 32 };
+    },
+  );
   await check(
     "First, middle and last layers preserve group/token on full spatial round trips",
     async () => {
       const tested = [];
       for (const layer of [0, 15, 31]) {
-        await button(`Select layer ${layer + 1}`).click();
+        await page
+          .getByLabel("Layer", { exact: true })
+          .selectOption(String(layer));
         await page.getByLabel("KV group", { exact: true }).selectOption("5");
         await page.getByLabel("Token", { exact: true }).selectOption("6");
         const wanted = { layer, group: 5, token: 6 };
@@ -525,7 +533,7 @@ try {
   await check(
     "Projected GLB layer mesh is selectable with the mouse",
     async () => {
-      await button("Select layer 32").click();
+      await page.getByLabel("Layer", { exact: true }).selectOption("31");
       await view("Overview");
       await range(page.getByRole("slider", { name: "Stack spacing" }), 2.6);
       await settle();
@@ -590,8 +598,10 @@ try {
     return { before, after };
   });
   await check("Keyboard controls select layers and retain focus", async () => {
-    const control = button("Select layer 12");
+    const control = page.getByLabel("Layer", { exact: true });
+    await control.selectOption("10");
     await control.focus();
+    await page.keyboard.press("ArrowDown");
     await page.keyboard.press("Enter");
     await expect(control).toBeFocused();
     expect((await snapshot(page)).state.layer).toBe(11);
@@ -668,7 +678,7 @@ try {
         .inputValue();
       const parsed = JSON.parse(saved);
       expect(parsed.camera).toBeTruthy();
-      await button("Select layer 3").click();
+      await page.getByLabel("Layer", { exact: true }).selectOption("2");
       await seek(69);
       await page.getByRole("textbox", { name: "View context" }).fill(saved);
       await button("Restore view").click();
@@ -872,9 +882,7 @@ try {
             () => matchMedia("(prefers-reduced-motion: reduce)").matches,
           ),
         ).toBe(true);
-        await narrow
-          .getByRole("button", { name: "Select layer 16", exact: true })
-          .click();
+        await narrow.getByLabel("Layer", { exact: true }).selectOption("15");
         await narrow.getByLabel("KV group", { exact: true }).selectOption("7");
         await narrow.getByLabel("Token", { exact: true }).selectOption("7");
         await narrow

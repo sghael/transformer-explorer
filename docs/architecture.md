@@ -24,7 +24,7 @@ Every semantic object has extras: schema_version=1, id (unique stable string), c
 
 ## Browser state
 
-One state owns selected layer, group, token, expert, view (overview/layer/attention/cache/router/expert/matrix/output/input), spacing, tour time, playing, speed, and illustrative seed 1729. View changes never reset selection. Matrix return restores its originating spatial view; overview round trips preserve layer/group/token. HTML controls provide all picking alternatives and a persistent 32-slot locator.
+One state owns selected layer, group, token, expert, view (overview/layer/attention/cache/router/expert/matrix/output/input), spacing, tour time, playing, speed, and illustrative seed 1729. View changes never reset selection. Matrix return restores its originating spatial view; overview round trips preserve layer/group/token. HTML controls provide all picking alternatives. A compact Layer dropdown selects any of the 32 layers, while the persistent location text identifies the selected layer, group, and token.
 
 Absolute timeline time determines chapter, pose, demonstration progress and highlights. No accumulated simulation changes are allowed. Explore and pause give OrbitControls sole camera ownership. Playback disables orbit and interpolates toward chapter anchors; resume blends from the current camera. Reduced motion jumps directly to identical target states. Review context serializes build/asset version, seed, state, camera position/target and viewport, and can restore that state.
 

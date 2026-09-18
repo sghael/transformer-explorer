@@ -512,19 +512,23 @@ export default function App() {
             {state.token + 1}
             <span>{ready ? "Live GLB" : "Loading"}</span>
           </div>
-          <div className="locator" aria-label="Layer locator">
-            {Array.from({ length: 32 }, (_, i) => (
-              <button
-                key={i}
-                aria-label={`Select layer ${i + 1}`}
-                aria-pressed={state.layer === i}
-                onClick={() => change({ layer: i, view: "layer" })}
-              >
-                {i + 1}
-              </button>
-            ))}
-          </div>
           <div className="spatial-controls">
+            <label>
+              Layer{" "}
+              <select
+                aria-label="Layer"
+                value={state.layer}
+                onChange={(event) =>
+                  change({ layer: Number(event.target.value), view: "layer" })
+                }
+              >
+                {Array.from({ length: 32 }, (_, i) => (
+                  <option key={i} value={i}>
+                    {i + 1} of 32
+                  </option>
+                ))}
+              </select>
+            </label>
             <label>
               Rendering{" "}
               <select
