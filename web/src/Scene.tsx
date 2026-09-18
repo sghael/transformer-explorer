@@ -273,16 +273,38 @@ function Effects({
               : `Layer ${p.state.layer + 1} of 32 · representative`,
             [0, 1.2, 0],
           )}
-          {view === "overview" && p.state.layer > 0 && (
-            <Html position={[-3.3, -2, 0]} center style={labelStyle}>
-              {p.state.layer} earlier{compact ? "" : " layers"}
-            </Html>
-          )}
-          {view === "overview" && p.state.layer < 31 && (
-            <Html position={[3.3, -2, 0]} center style={labelStyle}>
-              {31 - p.state.layer} later{compact ? "" : " layers"}
-            </Html>
-          )}
+          {view === "overview" &&
+            [
+              { x: -3.3, count: p.state.layer, direction: "earlier" },
+              { x: 3.3, count: 31 - p.state.layer, direction: "later" },
+            ]
+              .filter((span) => span.count > 0)
+              .map((span) => (
+                <group key={span.direction}>
+                  <Html
+                    position={[span.x, 0, 0]}
+                    center
+                    style={{
+                      ...labelStyle,
+                      background: "#101820",
+                      font: "28px/8px system-ui",
+                      padding: "0 5px",
+                      textShadow: "none",
+                    }}
+                  >
+                    <span
+                      role="img"
+                      aria-label={`${span.count} ${span.direction} layers omitted`}
+                    >
+                      ⋯
+                    </span>
+                  </Html>
+                  <Html position={[span.x, -2, 0]} center style={labelStyle}>
+                    {span.count} {span.direction}
+                    {compact ? "" : " layers"}
+                  </Html>
+                </group>
+              ))}
           {label("final_norm", compact ? "Norm" : "Final RMSNorm", [0, 0.8, 0])}
           {label("lm_head", "LM head", [0, compact ? 2.6 : 1.9, 0])}
           {label(
