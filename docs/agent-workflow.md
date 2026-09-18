@@ -12,7 +12,7 @@ The locally inspected Codex CLI version was 0.154.0. Its generated app-server `T
 
 ## Starting policy
 
-Read `../.codex/config.toml` for the selected model. The coordinator and all workers use that model, with low effort (Light in the UI) as the minimum. This is a project constraint, not a general recommendation for all repositories. Tune reasoning effort within the configured model. Change model IDs in configuration when upgrading; substitution requires the user's direction.
+Use the defaults in `../.codex/config.toml` when the user has not selected a model or effort for the task. Apply the user-override policy in `../AGENTS.md`. The table below guides implementation work; an explicit task selection takes precedence. Routine check-ins, Git status checks, and mechanical edits may use a lighter model and any effort supported by that model.
 
 | Work | Starting choice | Escalation trigger |
 | --- | --- | --- |
@@ -24,7 +24,7 @@ Read `../.codex/config.toml` for the selected model. The coordinator and all wor
 | Difficult spatial or state-machine diagnosis | Configured model, high; xhigh for a specific unresolved case | High still cannot resolve a bounded, reproduced failure |
 | Max effort | Exceptional, explicitly justified case | Define the question and exit condition before selecting it |
 
-The model minimum is required; effort choices above it are starting points. Verify the active harness's model IDs and effort support at dispatch. Read the model ID from project configuration and select it with the chosen effort for workers rather than inheriting a generic worker default. If matching workers are unavailable, keep the work with a coordinator using that model. If the model is unavailable altogether, report the limitation and request direction rather than silently substituting. Higher effort is neither a correctness guarantee nor a reason to add complexity.
+Verify the active harness's model IDs and effort support at dispatch. Use configured worker defaults unless the user's selection or task-specific direction overrides them; select model and effort explicitly when supported. If a requested setting is unavailable, report the limitation and use an available setting consistent with the user's instructions. Ask for direction only when an explicit requirement cannot be met. Higher effort is neither a correctness guarantee nor a reason to add complexity.
 
 A long render or many tool calls alone do not justify high effort: rendering time is tool work. Spend additional reasoning on uncertain geometry, architecture, and acceptance decisions. Diagnose missing dependencies, poor task briefs, or tool failures before changing effort.
 
@@ -166,11 +166,11 @@ For a new CLI session, use the verified flags with an absolute checkout path sup
 codex -C "$PROJECT_DIR" -c 'model_reasoning_effort="medium"'
 ```
 
-Use `high` for a session devoted to design contracts or difficult verification. In the app, use the available model/effort control. A coordinator can select supported settings for newly dispatched workers; it must not claim to change its own current effort without an exposed control and confirmation. When automatic switching is unavailable, retain the configured model at a supported effort meeting the project minimum and continue the bounded workflow.
+Use `high` for a session devoted to design contracts or difficult verification. In the app, use the available model/effort control. A coordinator can select supported settings for newly dispatched workers; it must not claim to change its own current effort without an exposed control and confirmation. When automatic switching is unavailable, report the active settings accurately and continue within the user’s authorized scope; prose edits cannot change the runtime model or unlock the app picker.
 
 For this session's collaboration interface, explicit overrides use `model` and `reasoning_effort`, with `fork_turns="none"` and a self-contained brief. A full-history fork inherits the parent's settings. Other clients may expose different fields; inspect their tool schema.
 
-The checked-in `.codex/config.toml` sets the coordinator model and worker defaults. Keep concrete model IDs there. Project instructions require matching model choices at dispatch and select effort per task; custom agent files must not introduce conflicting model pins. Model upgrades should update both configured role defaults together. No machine-wide model defaults are changed by this project configuration. [Codex model and worker configuration](https://learn.chatgpt.com/docs/agent-configuration/subagents)
+The checked-in `.codex/config.toml` sets the coordinator model and worker defaults. Keep concrete model IDs there. These are fallback choices for dispatch; custom agent files must honor explicit user overrides. Review both role defaults when changing the project defaults. No machine-wide model defaults are changed by this project configuration. [Codex model and worker configuration](https://learn.chatgpt.com/docs/agent-configuration/subagents)
 
 ## API effort changes and caching
 
@@ -192,6 +192,6 @@ No Blender-specific effort optimum was established by the reviewed official sour
 
 ## Reusable implementation goal
 
-> Complete milestones 1–5 in docs/project-plan.md: a reproducible Blender Python → GLB → interactive browser tutorial. Use project-configured models, follow the skill boundaries and human steering protocol, and deliver the LAN-accessible spatial preview by milestone 2. Continue through the complete tour, computational explanations, accessibility, and measured performance. Verify each increment, keep the latest successful preview available, and record evidence and remaining limitations in docs/progress.md. Human feedback may redirect work at any point; explicit pause-work requests stop implementation. Do not claim learner validation or laptop access without evidence. Do not substitute a static diagram, video, or placeholder for the navigable 3D exhibit.
+> Complete milestones 1–5 in docs/project-plan.md: a reproducible Blender Python → GLB → interactive browser tutorial. Honor the model defaults and user overrides in AGENTS.md, follow the skill boundaries and human steering protocol, and deliver the LAN-accessible spatial preview by milestone 2. Continue through the complete tour, computational explanations, accessibility, and measured performance. Verify each increment, keep the latest successful preview available, and record evidence and remaining limitations in docs/progress.md. Human feedback may redirect work at any point; explicit pause-work requests stop implementation. Do not claim learner validation or laptop access without evidence. Do not substitute a static diagram, video, or placeholder for the navigable 3D exhibit.
 
 Set a token or time budget only when the user supplies one. This document supplies goal wording; it does not start an unattended run.

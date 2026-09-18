@@ -8,15 +8,15 @@ Read `AGENT_PROMPT.txt` for the current assignment, `docs/project-plan.md` for m
 
 For a fresh task, use the startup, skill boundaries, and human steering protocol in `docs/agent-workflow.md`; inspect `docs/progress.md` if present. The full goal covers all five milestones, with a LAN-accessible preview by milestone 2. Do not use `impeccable` for Transformer pedagogy, scene architecture, Blender geometry, or initial planning; reserve it for later scoped web-interface refinement. Skills must not restart discovery, add redundant approval gates, or replace the required Blender Python → GLB → live browser pipeline. Human feedback can redirect work throughout the run.
 
-## Model requirement
+## Model defaults and overrides
 
-Read `.codex/config.toml` for the current model selection. Use the project-configured model for the coordinator and every worker; low/Light reasoning effort is the minimum. Choose effort according to `docs/agent-workflow.md`. Project configuration takes precedence over generic cheaper-worker defaults. Set the configured model and chosen effort explicitly at dispatch. If workers cannot use it, keep work with a coordinator using that model; otherwise report the limitation and request direction before substituting. Keep concrete model IDs in configuration, not in these instructions.
+Read `.codex/config.toml` for model and effort defaults. Honor the user's explicit model and effort selection for the task, including a selection made in the app. These defaults impose no model or reasoning-effort floor. Routine check-ins and mechanical work may use a lighter model. Follow `docs/agent-workflow.md` for task-based guidance and supported worker dispatch. Keep concrete default model IDs in configuration.
 
 ## Execution
 
 Use the plan → bounded implementation → automated checks → visual inspection → acceptance loop in `docs/agent-workflow.md`. Keep the coordinator responsible for architecture, integration, and acceptance. Delegate an independent, bounded implementation or inspection task when it lets the coordinator make useful progress concurrently; use at most two workers initially and give each exclusive file ownership. Keep sequential or trivial work local.
 
-Choose model and effort through supported runtime controls. A sentence in this file cannot change the current model's reasoning configuration. Follow the routing table and existing user preferences; report requested versus confirmed settings accurately. If a setting or delegation capability is unavailable, follow the model requirement above and state the limitation.
+Choose model and effort through supported runtime controls. A sentence in this file cannot change the current model's reasoning configuration. Follow the routing table and existing user preferences; report requested versus confirmed settings accurately. If a setting or delegation capability is unavailable, state the limitation and distinguish the requested settings from those actually available.
 
 ## Evidence
 

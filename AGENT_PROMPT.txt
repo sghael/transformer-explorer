@@ -57,9 +57,8 @@ reference to establish layout before adding materials and effects.
 
 IMPLEMENTATION LOOP
 
-Use the project-configured model for the coordinator and every worker, with
-low/Light as the minimum effort, as required by AGENTS.md. Follow docs/agent-workflow.md for reasoning
-selection and delegation. Settle
+Follow the model defaults and user-override policy in AGENTS.md and
+docs/agent-workflow.md for reasoning selection and delegation. Settle
 interfaces and acceptance criteria before assigning workers. Give each worker
 one bounded task with owned files and checks; retain integration and acceptance
 with the coordinator. Return diffs, test results, and artifact paths.
