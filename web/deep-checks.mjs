@@ -244,14 +244,18 @@ try {
   await check(
     "Animate flow moves packets, Pause freezes them, and Step advances one second",
     async () => {
+      // The scene snapshot is rewritten only when a frame renders, and software
+      // frames can outlast a fixed delay. Wait for a frame showing each click.
       await view("Model overview");
       await button("Animate flow").click();
+      await page.waitForFunction(() => window.__explorerScene.flowPlaying);
       await page.waitForTimeout(240);
       const moving = await scene();
       expect(moving.flowPlaying).toBe(true);
       expect(packets(moving).length).toBeGreaterThan(0);
-      await page.waitForTimeout(260);
-      expect(packets(await scene())).not.toEqual(packets(moving));
+      await expect
+        .poll(async () => packets(await scene()))
+        .not.toEqual(packets(moving));
       const timing = await page.evaluate(
         () =>
           new Promise((resolve) => {
@@ -281,14 +285,24 @@ try {
       timing.limitation =
         "Headless Chromium with SwiftShader software rendering; not a representative laptop GPU measurement.";
       await button("Pause flow").click();
-      await page.waitForTimeout(120);
+      await page.waitForFunction(() => !window.__explorerScene.flowPlaying);
       const frozen = await scene();
       await page.waitForTimeout(260);
+      // Compare against a newly rendered frame, not the snapshot already read.
+      await page.evaluate(
+        () =>
+          new Promise((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(resolve)),
+          ),
+      );
       const still = await scene();
       expect(still.flowTime).toBe(frozen.flowTime);
       expect(packets(still)).toEqual(packets(frozen));
       await button("Step flow").click();
-      await page.waitForTimeout(120);
+      await page.waitForFunction(
+        (time) => window.__explorerScene.flowTime !== time,
+        frozen.flowTime,
+      );
       const stepped = await scene();
       expect(stepped.flowTime).toBe((frozen.flowTime + 1) % 12);
       expect(stepped.flowPlaying).toBe(false);
