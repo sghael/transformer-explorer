@@ -35,7 +35,8 @@ export interface Chapter {
   cameraAnchor: string;
   cameraTarget: [number, number, number];
   detailLevel: number;
-  selection: { layer: number; group: number; token: number; expert: number };
+  // The tour derives its expert from routing; see routedExpert.
+  selection: { layer: number; group: number; token: number };
   locator: boolean;
   emphasis: string[];
   dimming: string[];
@@ -225,4 +226,17 @@ export function sample(
       probability: outputProbabilities[i],
     })),
   };
+}
+
+// The focused expert must be one the router selected for this token, or the
+// expert view would contradict the top-2 routing shown beside it. A current
+// routed choice is kept; otherwise focus moves to the highest-weighted one.
+export function routedExpert(
+  layer: number,
+  group: number,
+  token: number,
+  current?: number,
+) {
+  const { top2 } = sample(layer, group, token).router;
+  return current !== undefined && top2.includes(current) ? current : top2[0];
 }

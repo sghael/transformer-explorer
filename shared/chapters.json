@@ -16,8 +16,7 @@
       "selection": {
         "layer": 15,
         "group": 2,
-        "token": 6,
-        "expert": 4
+        "token": 6
       },
       "locator": true,
       "emphasis": ["input", "layer_stack", "final_norm", "output"],
@@ -57,8 +56,7 @@
       "selection": {
         "layer": 15,
         "group": 2,
-        "token": 6,
-        "expert": 4
+        "token": 6
       },
       "locator": true,
       "emphasis": ["input", "embedding"],
@@ -92,8 +90,7 @@
       "selection": {
         "layer": 15,
         "group": 2,
-        "token": 6,
-        "expert": 4
+        "token": 6
       },
       "locator": true,
       "emphasis": ["layer_stack", "focus_layer"],
@@ -127,8 +124,7 @@
       "selection": {
         "layer": 15,
         "group": 2,
-        "token": 6,
-        "expert": 4
+        "token": 6
       },
       "locator": true,
       "emphasis": ["norm1", "attention", "residual1", "add1"],
@@ -162,8 +158,7 @@
       "selection": {
         "layer": 15,
         "group": 2,
-        "token": 6,
-        "expert": 4
+        "token": 6
       },
       "locator": true,
       "emphasis": ["attention", "rope", "causal_mask"],
@@ -197,8 +192,7 @@
       "selection": {
         "layer": 15,
         "group": 2,
-        "token": 6,
-        "expert": 4
+        "token": 6
       },
       "locator": true,
       "emphasis": ["kv_cache"],
@@ -232,8 +226,7 @@
       "selection": {
         "layer": 15,
         "group": 2,
-        "token": 6,
-        "expert": 4
+        "token": 6
       },
       "locator": true,
       "emphasis": ["add1", "norm2", "moe_router", "experts"],
@@ -267,8 +260,7 @@
       "selection": {
         "layer": 15,
         "group": 2,
-        "token": 6,
-        "expert": 4
+        "token": 6
       },
       "locator": true,
       "emphasis": ["expert_detail", "merge", "residual2", "add2"],
@@ -308,8 +300,7 @@
       "selection": {
         "layer": 15,
         "group": 2,
-        "token": 6,
-        "expert": 4
+        "token": 6
       },
       "locator": true,
       "emphasis": ["layer_stack", "final_norm", "lm_head", "output"],
@@ -349,8 +340,7 @@
       "selection": {
         "layer": 15,
         "group": 2,
-        "token": 6,
-        "expert": 4
+        "token": 6
       },
       "locator": true,
       "emphasis": ["input", "kv_cache", "layer_stack", "output"],
