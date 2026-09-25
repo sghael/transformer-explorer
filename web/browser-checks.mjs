@@ -1120,11 +1120,76 @@ try {
           token: 7,
         });
         await capture("narrow-reduced-motion-overview", narrow);
+        // Reduced motion shows whole-second tour states instead of gliding.
+        await range(
+          narrow.getByRole("slider", { name: "Tour position" }),
+          28.9,
+        );
+        await expect
+          .poll(() => narrow.evaluate(() => window.__explorerScene.time))
+          .toBe(28);
+        expect((await snapshot(narrow)).time).toBe(28.9);
+        // The selected speed must be shown, including 0.5×.
+        await narrow.getByLabel("Speed", { exact: true }).selectOption("0.5");
+        expect(
+          await narrow.getByLabel("Speed", { exact: true }).inputValue(),
+        ).toBe("0.5");
       } finally {
         await narrowContext.close();
       }
     },
   );
+  await check("Model and WebGL failures replace only the 3D view", async () => {
+    const evidence = {};
+    for (const [name, setup, title] of [
+      [
+        "missing-model",
+        (target) =>
+          target.route("**/*.glb", (route) => route.fulfill({ status: 404 })),
+        "The model could not load",
+      ],
+      [
+        "no-webgl",
+        (target) =>
+          target.addInitScript(() => {
+            const getContext = HTMLCanvasElement.prototype.getContext;
+            HTMLCanvasElement.prototype.getContext = function (type, ...rest) {
+              return /webgl/.test(type)
+                ? null
+                : getContext.call(this, type, ...rest);
+            };
+          }),
+        "3D view unavailable",
+      ],
+    ]) {
+      const failing = await browser.newContext({ viewport: report.viewport });
+      const target = await failing.newPage();
+      await setup(target);
+      await target.goto(preview);
+      const alert = target.getByRole("alert");
+      await expect(alert).toContainText(title);
+      // The alert sits inside the canvas area; teaching text and tour stay.
+      await expect(target.locator(".canvas [role=alert]")).toBeVisible();
+      await expect(
+        target.getByRole("heading", { name: "How it works" }),
+      ).toBeVisible();
+      await expect(
+        target.getByRole("button", { name: "Play tour", exact: true }),
+      ).toBeVisible();
+      await target
+        .getByRole("button", { name: "Expert routing", exact: true })
+        .click();
+      await expect(
+        target.getByText("Two selected expert outputs"),
+      ).toBeVisible();
+      await expect(target.locator(".location")).toContainText("No 3D view");
+      await expect(target.getByText("Drag to orbit")).toHaveCount(0);
+      await capture(`failure-${name}`, target);
+      evidence[name] = await alert.textContent();
+      await failing.close();
+    }
+    return evidence;
+  });
   await check("No browser runtime, console or HTTP errors", async () => {
     expect(report.errors).toEqual([]);
   });

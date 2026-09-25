@@ -1,12 +1,21 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import Scene, {
   type CameraPose,
   type Selection,
   type ContextMode,
+  type ReadyInfo,
 } from "./Scene";
 import { flowDescription } from "./Flow";
 import { representativeLayers, representativeLayer } from "./layout";
 import RmsNormPanel from "./RmsNormPanel";
+import LoadBoundary from "./LoadBoundary";
+import { diagnosticsEnabled } from "./diagnostics";
 import EvidenceStrip, {
   ProbabilityBar,
   ProbabilityScale,
@@ -18,6 +27,8 @@ import {
   chapterAt,
   architecture,
   routedExpert,
+  tourDuration,
+  tourTime,
   type View,
 } from "./data";
 const initial: Selection = {
@@ -159,9 +170,19 @@ function explainShape(selection: Selection, decode: boolean): ShapeExplanation {
   };
   return explanations[selection.view];
 }
-const build = (import.meta as any).env.VITE_BUILD_ID || "development";
-const reviewEnabled =
-  (import.meta as any).env.VITE_REVIEW === "1" || (import.meta as any).env.DEV;
+const build = import.meta.env.VITE_BUILD_ID || "development";
+const reducedMotionQuery = "(prefers-reduced-motion: reduce)";
+// Follows the system setting live, not only at page load.
+function usePrefersReducedMotion() {
+  return useSyncExternalStore(
+    (onChange) => {
+      const query = matchMedia(reducedMotionQuery);
+      query.addEventListener("change", onChange);
+      return () => query.removeEventListener("change", onChange);
+    },
+    () => matchMedia(reducedMotionQuery).matches,
+  );
+}
 export default function App() {
   const [state, setState] = useState<Selection>(initial);
   const [cameraRevision, setCameraRevision] = useState(0);
@@ -179,7 +200,8 @@ export default function App() {
   >("operation");
   const [inspectionChannel, setInspectionChannel] = useState(0);
   const [speed, setSpeed] = useState(1);
-  const [ready, setReady] = useState<any>(null);
+  const [ready, setReady] = useState<ReadyInfo | null>(null);
+  const [sceneFailed, setSceneFailed] = useState(false);
   const [context, setContext] = useState("");
   const [restorePose, setRestorePose] = useState<CameraPose | null>(null);
   const [decode, setDecode] = useState<boolean | null>(null);
@@ -189,10 +211,7 @@ export default function App() {
   useEffect(() => {
     explanationRef.current?.scrollTo({ top: 0 });
   }, [state.view, inspectedComponent]);
-  const reduced = useMemo(
-    () => matchMedia("(prefers-reduced-motion: reduce)").matches,
-    [],
-  );
+  const reduced = usePrefersReducedMotion();
   const data = useMemo(
     () => sample(state.layer, state.group, state.token),
     [state.layer, state.group, state.token],
@@ -204,7 +223,9 @@ export default function App() {
   const showingDecode =
     state.view === "cache" && (flowPlaying || flowTime > 0)
       ? flowTime >= 6
-      : (decode ?? ((time >= 41.5 && time < 45) || time >= 74));
+      : (decode ??
+        ((time >= tourTime("cache", 1 / 2) && time < tourTime("cache", 1)) ||
+          time >= tourTime("decode")));
   const shape = explainShape(state, showingDecode);
   const contextForView = (view: View): ContextMode =>
     ["attention", "cache", "matrix"].includes(view) ? "isolated" : "muted";
@@ -284,8 +305,8 @@ export default function App() {
       const elapsed = ((now - last) / 1000) * speed;
       last = now;
       setTime((t) => {
-        const next = Math.min(80, t + elapsed);
-        if (next === 80) setPlaying(false);
+        const next = Math.min(tourDuration, t + elapsed);
+        if (next === tourDuration) setPlaying(false);
         return next;
       });
       frame = requestAnimationFrame(tick);
@@ -295,6 +316,7 @@ export default function App() {
   }, [playing, speed]);
   useEffect(() => {
     if (playing) applyChapter(time);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- apply a chapter when it changes, not on every tour frame
   }, [chapter.id, playing]);
   const seek = (t: number) => {
     setCameraRevision((r) => r + 1);
@@ -302,7 +324,8 @@ export default function App() {
     applyChapter(t);
   };
   useEffect(() => {
-    (window as any).__explorer = {
+    if (!diagnosticsEnabled) return;
+    window.__explorer = {
       state,
       time,
       playing,
@@ -330,7 +353,7 @@ export default function App() {
     const value = JSON.stringify(
       {
         build,
-        asset: (import.meta as any).env.VITE_ASSET_NAME || "transformer.glb",
+        asset: import.meta.env.VITE_ASSET_NAME || "transformer.glb",
         seed: 1729,
         layoutVersion: 2,
         state,
@@ -376,7 +399,7 @@ export default function App() {
       if (
         !Number.isFinite(value.time) ||
         value.time < 0 ||
-        value.time > 80 ||
+        value.time > tourDuration ||
         !Number.isFinite(value.state.spacing) ||
         value.state.spacing < 1 ||
         value.state.spacing > 3
@@ -522,57 +545,61 @@ export default function App() {
             <span className="badge">Illustrative data</span>
           </div>
           <div className="canvas">
-            <Scene
-              onView={(view) => {
-                setCameraRevision((r) => r + 1);
-                change({ view });
-              }}
-              state={state}
-              lowQuality={lowQuality}
-              contextMode={contextMode}
-              normFocus={inspectedComponent}
-              cameraRevision={cameraRevision}
-              time={time}
-              flowTime={flowTime}
-              flowPlaying={flowPlaying}
-              decode={showingDecode}
-              playing={playing}
-              reduced={reduced}
-              top2={data.router.top2}
-              cameraRef={cameraRef}
-              restorePose={restorePose}
-              onReady={setReady}
-              onPick={(id, d) => {
-                const patch: Partial<Selection> = {};
-                if (Number.isInteger(d.layer) && d.layer >= 0 && d.layer < 32)
-                  patch.layer = d.layer;
-                if (d.group !== undefined) patch.group = d.group;
-                if (d.expert !== undefined) patch.expert = d.expert;
-                patch.view =
-                  id === "input" || id === "embedding"
-                    ? "input"
-                    : ["final_norm", "lm_head", "output"].includes(id)
-                      ? "output"
-                      : id.startsWith("cache_")
-                        ? "cache"
-                        : d.expert !== undefined
-                          ? "expert"
-                          : id.includes("router")
-                            ? "router"
-                            : d.group !== undefined || id.includes("attention")
-                              ? "attention"
-                              : "layer";
-                change(patch);
-                if (id === "norm1" || id === "norm2" || id === "final_norm")
-                  inspectNorm(id);
-                else setInspectedComponent(null);
-              }}
-            />
-            {!ready && (
-              <div className="loading" role="status">
-                Loading the Blender model…
-              </div>
-            )}
+            <LoadBoundary scope="scene" onError={() => setSceneFailed(true)}>
+              <Scene
+                onView={(view) => {
+                  setCameraRevision((r) => r + 1);
+                  change({ view });
+                }}
+                state={state}
+                lowQuality={lowQuality}
+                contextMode={contextMode}
+                normFocus={inspectedComponent}
+                cameraRevision={cameraRevision}
+                // Reduced motion steps through the same states instead of gliding.
+                time={reduced ? Math.floor(time) : time}
+                flowTime={reduced ? Math.floor(flowTime) : flowTime}
+                flowPlaying={flowPlaying}
+                decode={showingDecode}
+                playing={playing}
+                reduced={reduced}
+                top2={data.router.top2}
+                cameraRef={cameraRef}
+                restorePose={restorePose}
+                onReady={setReady}
+                onPick={(id, d) => {
+                  const patch: Partial<Selection> = {};
+                  if (Number.isInteger(d.layer) && d.layer >= 0 && d.layer < 32)
+                    patch.layer = d.layer;
+                  if (d.group !== undefined) patch.group = d.group;
+                  if (d.expert !== undefined) patch.expert = d.expert;
+                  patch.view =
+                    id === "input" || id === "embedding"
+                      ? "input"
+                      : ["final_norm", "lm_head", "output"].includes(id)
+                        ? "output"
+                        : id.startsWith("cache_")
+                          ? "cache"
+                          : d.expert !== undefined
+                            ? "expert"
+                            : id.includes("router")
+                              ? "router"
+                              : d.group !== undefined ||
+                                  id.includes("attention")
+                                ? "attention"
+                                : "layer";
+                  change(patch);
+                  if (id === "norm1" || id === "norm2" || id === "final_norm")
+                    inspectNorm(id);
+                  else setInspectedComponent(null);
+                }}
+              />
+              {!ready && (
+                <div className="loading" role="status">
+                  Loading the Blender model…
+                </div>
+              )}
+            </LoadBoundary>
             <div
               className={
                 state.view === "matrix"
@@ -587,8 +614,12 @@ export default function App() {
                   : state.view === "cache"
                     ? "Rows: token positions · Columns: sampled head channels"
                     : "Left → right (+X): computation · Depth: parallel heads / experts"}
-              <br />
-              Drag to orbit · Scroll to zoom · Select an object to inspect
+              {!sceneFailed && (
+                <>
+                  <br />
+                  Drag to orbit · Scroll to zoom · Select an object to inspect
+                </>
+              )}
             </div>
           </div>
           <div className="location" aria-live="polite">
@@ -599,7 +630,9 @@ export default function App() {
               {!inspectedComponent && ` / KV group ${state.group + 1}`} / token{" "}
               {state.token + 1}
             </span>
-            <span>{ready ? "Live GLB" : "Loading"}</span>
+            <span>
+              {ready ? "Live GLB" : sceneFailed ? "No 3D view" : "Loading"}
+            </span>
           </div>
           <div className="spatial-controls">
             <label>
@@ -629,7 +662,7 @@ export default function App() {
                 <option value="reduced">Reduced pixel density</option>
               </select>
             </label>
-            {reviewEnabled && (
+            {diagnosticsEnabled && (
               <label>
                 Surroundings{" "}
                 <select
@@ -658,7 +691,7 @@ export default function App() {
               Overview
             </button>
           </div>
-          {reviewEnabled && (
+          {diagnosticsEnabled && (
             <p id="surroundings-note" className="surroundings-note">
               Attention and RMSNorm close-ups hide surroundings. Use
               Surroundings to override this; connections continue beyond the
@@ -1118,7 +1151,7 @@ export default function App() {
                 </details>
               </div>
             )}
-          {reviewEnabled && (
+          {diagnosticsEnabled && (
             <details className="review">
               <summary>Development view context</summary>
               <p>
@@ -1171,7 +1204,7 @@ export default function App() {
               <button
                 className="primary"
                 onClick={() => {
-                  if (time >= 80) seek(0);
+                  if (time >= tourDuration) seek(0);
                   setPlaying(!playing);
                 }}
               >
@@ -1201,7 +1234,7 @@ export default function App() {
                   value={speed}
                   onChange={(e) => setSpeed(+e.target.value)}
                 >
-                  <option value=".5">0.5×</option>
+                  <option value="0.5">0.5×</option>
                   <option value="1">1×</option>
                   <option value="1.5">1.5×</option>
                 </select>
@@ -1213,12 +1246,14 @@ export default function App() {
                 aria-label="Tour position"
                 type="range"
                 min="0"
-                max="80"
+                max={tourDuration}
                 step=".1"
                 value={time}
                 onChange={(e) => seek(+e.target.value)}
               />
-              <output>{time.toFixed(1)} / 80 s</output>
+              <output>
+                {time.toFixed(1)} / {tourDuration} s
+              </output>
             </label>
             <p className="caption">
               <span className="caption-label">
