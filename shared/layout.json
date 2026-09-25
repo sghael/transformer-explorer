@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "focus_scale": 0.16,
   "layer_dimensions": [
     3.52,
@@ -48,5 +48,17 @@
       ]
     }
   },
-  "feedback_z": 2.5
+  "feedback_z": 2.5,
+  "camera_fit_aspect": 1.6,
+  "cameras": {
+    "overview": {"anchor": "CAM_OVERVIEW", "frame": "model", "position": [0, 6.727272727272727, 14.015151515151514], "target": [0.5, 0, 0]},
+    "input": {"anchor": "CAM_INPUT", "frame": "model", "position": [-6.25, 3, 6], "target": [-6.25, 0, 0]},
+    "layer": {"anchor": "CAM_LAYER", "frame": "layer", "position": [4, 7, 16], "target": [0, 0.6, 0], "fit": "z"},
+    "attention": {"anchor": "CAM_ATTENTION", "frame": "layer", "position": [-1.8, 2.8, 7], "target": [-4.8, -0.25, 0], "depth": "group"},
+    "cache": {"anchor": "CAM_CACHE", "frame": "layer", "position": [-4.9, -2.36, 1.1], "target": [-4.9, -2.36, 0], "depth": "group"},
+    "matrix": {"anchor": "CAM_MATRIX", "frame": "layer", "position": [-3.35, 1.45, 1.15], "target": [-3.35, 1.45, 0], "depth": "group"},
+    "router": {"anchor": "CAM_MOE", "frame": "layer", "position": [12, 9, 2], "target": [5, 0, 0]},
+    "expert": {"anchor": "CAM_EXPERT", "frame": "layer", "position": [5.55, 0.45, 0.72], "target": [5, 0, 0], "depth": "expert", "fit": "xy"},
+    "output": {"anchor": "CAM_LM_HEAD", "frame": "model", "position": [7, 3, 6], "target": [7, 0, 0]}
+  }
 }

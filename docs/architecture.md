@@ -1,6 +1,6 @@
 # Scene and interaction contract
 
-Version 4. Original schematic geometry; all samples are illustrative. Architecture counts come from shared/model-spec.json.
+Version 5. Original schematic geometry; all samples are illustrative. Architecture counts come from shared/model-spec.json.
 
 ## Coordinates and ownership
 
@@ -18,7 +18,13 @@ Attention has eight groups separated along Z at (g-3.5)*1.2. Each group contains
 
 ## Metadata
 
-Every semantic object has extras: schema_version=1, id (unique stable string), component (snake_case), layer (0–31 for slices, -1 for reusable detail), lod (0/1/2), interactive (boolean), description_key. Optional group, head, expert and dimensions specify semantic identity. All geometry has a semantic ancestor. Camera anchors use component=camera_anchor, browser-space target_x/target_y/target_z extras; their positions undergo normal export conversion. Reports record parent, local/world transforms, bounds, meshes, triangles, and exported extras. Export and actual Three.js loading both check the coordinate sentinel, anchors, counts and identity. Repeated meshes share glTF mesh data; GPU instancing is not assumed.
+Every semantic object has extras: schema_version=1, id (unique stable string), component (snake_case), layer (0–31 for slices, -1 for reusable detail), lod (0/1/2), interactive (boolean), description_key. Optional group, head, expert and dimensions specify semantic identity. All geometry has a semantic ancestor. Camera anchors use component=camera_anchor, browser-space target_x/target_y/target_z extras; their positions undergo normal export conversion. Each view anchor is generated from the camera framing below. Reports record parent, local/world transforms, bounds, meshes, triangles, and exported extras. Export and actual Three.js loading both check the coordinate sentinel, anchors, counts and identity. Repeated meshes share glTF mesh data; GPU instancing is not assumed.
+
+## Camera framing
+
+`shared/layout.json` (schema 2) is the only source of camera framing. `cameras` gives each view an anchor name, a coordinate frame, a camera position and a target. The `model` frame is world space. The `layer` frame uses the reusable interior's coordinates, placed by `inLayer` into the representative frame at focus_scale. Two optional fields apply the selection-dependent part. `depth: "group"` or `"expert"` adds the selected group's (g-3.5)*1.2 or expert's (e-3.5)*1.1 Z offset to position and target. `fit` lists the axes along which the camera's offset from its target is multiplied by max(1, camera_fit_aspect / canvas aspect), so narrow canvases pull back without changing the target. Positions and targets are the human-tuned framing and must not be changed casually. Regenerate the baseline with `web/camera-poses.mjs` before and after any intended change.
+
+`web/src/camera.ts` computes `viewPose(view, selection, aspect)` from that data for free navigation, tour seeking, flights and reduced motion alike. The Blender generator exports each view camera as its `CAM_*` anchor: the base world pose with no depth offset or fit. `validate_glb.py` and the viewer's load checks both require the exported anchors to match the data. Tour chapters name the camera they use with `cameraAnchor`. It must be the camera of the chapter's view, and the viewer refuses to load otherwise. Chapters no longer carry a separate `cameraTarget`, because the target belongs to the camera. RMSNorm close-ups are the one exception: they frame the selected norm from its exported bounds.
 
 ## Browser state
 

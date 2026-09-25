@@ -32,8 +32,8 @@ export interface Chapter {
   end: number;
   duration: number;
   view: View;
+  // Names the view's camera in shared/layout.json, which holds its framing.
   cameraAnchor: string;
-  cameraTarget: [number, number, number];
   detailLevel: number;
   // The tour derives its expert from routing; see routedExpert.
   selection: { layer: number; group: number; token: number };
@@ -48,6 +48,8 @@ export interface Chapter {
   misconception: string;
   acceptance: string;
 }
+if (chapterData.schema_version !== 2)
+  throw Error("chapters.json must use schema version 2");
 export const chapters = chapterData.chapters as Chapter[];
 export const tourDuration = chapters.at(-1)!.end;
 /** Absolute tour time at a fraction of a chapter, so choreography follows chapters.json. */
