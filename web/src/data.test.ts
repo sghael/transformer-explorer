@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import spec from "../../shared/model-spec.json";
 import {
   architecture,
   cacheRows,
@@ -7,10 +8,12 @@ import {
   chapterProgress,
   chapters,
   routedExpert,
+  ropeAngle,
   sample,
   softmax,
   tokens,
   tourDuration,
+  tourTime,
 } from "./data";
 const sum = (values: number[]) =>
   values.reduce((total, value) => total + value, 0);
@@ -183,4 +186,37 @@ test("focused experts follow the router's top-2 selection", () => {
       chapter.id,
     );
   }
+});
+test("RoPE uses Mixtral's base frequency", () => {
+  assert.equal(architecture.rope_theta, 1_000_000);
+  close(ropeAngle(3, 0), 3);
+  close(ropeAngle(3, 2), 3 * 1_000_000 ** (-2 / architecture.head_dim));
+});
+test("next-token scores come from the final position, not the selection", () => {
+  const expected = sample(0, 0, 0).candidates;
+  for (const layer of [0, 15, 31])
+    for (let token = 0; token < tokens.length; token++)
+      assert.deepEqual(sample(layer, 2, token).candidates, expected);
+});
+test("illustrative routing varies across layers and tokens", () => {
+  const weights = new Set<string>();
+  for (const layer of [0, 15, 31])
+    for (let token = 0; token < tokens.length; token++)
+      weights.add(sample(layer, 2, token).router.weights[0].toFixed(3));
+  // A weak hash repeated one weight pair across most selections.
+  assert.ok(
+    weights.size >= 20,
+    `only ${weights.size} distinct routing weights`,
+  );
+});
+test("the tour lasts as long as the model specification's target", () => {
+  assert.equal(tourDuration, spec.visualization.target_tour_seconds);
+});
+test("tour choreography times are placed within their chapters", () => {
+  for (const chapter of chapters) {
+    assert.equal(tourTime(chapter.id), chapter.start);
+    assert.equal(tourTime(chapter.id, 1), chapter.end);
+    assert.equal(chapterAt(tourTime(chapter.id, 0.5)).id, chapter.id);
+  }
+  assert.throws(() => tourTime("missing"), RangeError);
 });
