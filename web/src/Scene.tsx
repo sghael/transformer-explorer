@@ -69,6 +69,20 @@ const sceneEvents: typeof events = (store) => ({
   filter: (intersections) =>
     intersections.filter(({ object }) => isVisibleInScene(object)),
 });
+// OrbitControls keeps a released drag's damped rotation privately and keeps
+// spending it on every update(), even while disabled for a flight. Discard it
+// when navigation takes the camera, or the pose drifts after arrival.
+function stopOrbitInertia(controls: Controls) {
+  const position = controls.object.position.clone();
+  const target = controls.target.clone();
+  const damping = controls.enableDamping;
+  controls.enableDamping = false;
+  controls.update(); // Undamped update() applies and clears pending motion.
+  controls.enableDamping = damping;
+  controls.object.position.copy(position);
+  controls.target.copy(target);
+  controls.update();
+}
 const anchors: Record<View, string> = {
   overview: "CAM_OVERVIEW",
   input: "CAM_INPUT",
@@ -886,6 +900,7 @@ function Model(p: Props) {
         poseFor(p.state.view);
     destination.current = pose;
     moving.current = true;
+    if (controls.current) stopOrbitInertia(controls.current);
     if (
       previous &&
       previous.key !== viewKey &&
@@ -933,7 +948,10 @@ function Model(p: Props) {
     if (p.restorePose) {
       navigation.current = null;
       applySelectionLayout();
-      if (controls.current) controls.current.enabled = !p.playing;
+      if (controls.current) {
+        stopOrbitInertia(controls.current);
+        controls.current.enabled = !p.playing;
+      }
       destination.current = p.restorePose;
       moving.current = true;
     }
