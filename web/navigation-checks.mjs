@@ -241,9 +241,22 @@ try {
   }
   try {
     const evidence = [];
+    let attentionArrival;
     for (const mode of ["overview-arrival", "same-view-seek"]) {
       await button("Attention heads").click();
       await settle();
+      // The second flight follows a released orbit drag. Its damped inertia
+      // must not carry through the flight and move the arrival pose.
+      const arrival = (await scene()).camera;
+      if (attentionArrival)
+        for (const field of ["position", "target"])
+          arrival[field].forEach((value, axis) =>
+            expect(
+              value,
+              `${mode} attention arrival ${field} matches the first arrival`,
+            ).toBeCloseTo(attentionArrival[field][axis], 6),
+          );
+      else attentionArrival = arrival;
       await button(
         mode === "overview-arrival" ? "Model overview" : "Inside a layer",
       ).click();
