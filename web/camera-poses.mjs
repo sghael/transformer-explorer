@@ -142,7 +142,7 @@ for (const viewport of viewports) {
             group === 3 &&
             expert === 4
           )
-            await page.screenshot({
+            await page.locator("canvas").screenshot({
               path: path.join(artifacts, `${viewport.name}-${view}.png`),
             });
         }
