@@ -6,6 +6,7 @@ import {
   chapterAt,
   chapterProgress,
   chapters,
+  routedExpert,
   sample,
   softmax,
   tokens,
@@ -162,4 +163,24 @@ test("two independent toy expert outputs merge before the residual addition", ()
         assert.ok(Math.abs(d.residualOutput[c] - d.activation[c] - v) < 1e-12);
       });
     }
+});
+test("focused experts follow the router's top-2 selection", () => {
+  for (const layer of [0, 15, 31])
+    for (let token = 0; token < tokens.length; token++) {
+      const { top2 } = sample(layer, 2, token).router;
+      assert.equal(routedExpert(layer, 2, token), top2[0]);
+      assert.equal(routedExpert(layer, 2, token, top2[1]), top2[1]);
+      for (let expert = 0; expert < architecture.experts; expert++)
+        assert.ok(top2.includes(routedExpert(layer, 2, token, expert)));
+    }
+  for (const chapter of chapters) {
+    assert.ok(!("expert" in chapter.selection), chapter.id);
+    const { layer, group, token } = chapter.selection;
+    assert.ok(
+      sample(layer, group, token).router.top2.includes(
+        routedExpert(layer, group, token),
+      ),
+      chapter.id,
+    );
+  }
 });

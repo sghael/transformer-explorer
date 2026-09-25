@@ -1,5 +1,6 @@
 import { chromium } from "@playwright/test";
 import fs from "node:fs";
+if (!process.env.PREVIEW_URL) throw Error("Set PREVIEW_URL");
 const browser = await chromium.launch({
   headless: true,
   args: [
@@ -20,16 +21,14 @@ await page.screenshot({
   path: new URL("overview.png", output).pathname,
   fullPage: true,
 });
-await page
-  .getByRole("button", { name: "Select layer 12", exact: true })
-  .click();
+await page.getByLabel("Layer", { exact: true }).selectOption("31");
 await page.waitForTimeout(1800);
 await page.screenshot({
   path: new URL("layer.png", output).pathname,
   fullPage: true,
 });
 await page
-  .getByRole("button", { name: "Attention group", exact: true })
+  .getByRole("button", { name: "Attention heads", exact: true })
   .click();
 await page.waitForTimeout(1800);
 await page.screenshot({

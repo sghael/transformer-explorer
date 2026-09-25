@@ -545,7 +545,7 @@ function Effects({
         <>
           {label(
             "expert_detail",
-            `Expert ${p.state.expert + 1} · distinct learned weights`,
+            `Expert ${p.state.expert + 1} · ${p.top2.includes(p.state.expert) ? "distinct learned weights" : "not selected for this token"}`,
             [0, 0.65, 0],
           )}
           {label("gate", "Gate 4096 → 14336", [-0.3, 0.35, 0])}

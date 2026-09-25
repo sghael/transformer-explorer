@@ -17,13 +17,14 @@ import {
   chapters,
   chapterAt,
   architecture,
+  routedExpert,
   type View,
 } from "./data";
 const initial: Selection = {
   layer: 15,
   group: 2,
   token: 4,
-  expert: 0,
+  expert: routedExpert(15, 2, 4),
   view: "overview",
   spacing: 1,
 };
@@ -216,12 +217,20 @@ export default function App() {
     if (patch.view) setInspectedComponent(null);
     if (patch.view === "matrix" && state.view !== "matrix")
       setMatrixOrigin(state.view);
-    setState((s) => ({
-      ...s,
-      ...patch,
-      layer: representativeLayer(patch.layer ?? s.layer),
-      spacing: 1,
-    }));
+    setState((s) => {
+      const next = {
+        ...s,
+        ...patch,
+        layer: representativeLayer(patch.layer ?? s.layer),
+        spacing: 1,
+      };
+      // An explicit pick may inspect any expert; other changes keep a routed one.
+      if (patch.expert !== undefined) return next;
+      return {
+        ...next,
+        expert: routedExpert(next.layer, next.group, next.token, next.expert),
+      };
+    });
   };
   const inspectNorm = (component: "norm1" | "norm2" | "final_norm") => {
     change({ view: component === "final_norm" ? "output" : "layer" });
@@ -242,11 +251,14 @@ export default function App() {
     const c = chapterAt(t);
     if (c.view !== state.view || inspectedComponent)
       setContextMode(contextForView(c.view));
+    const layer = representativeLayer(c.selection.layer);
     setState((s) => ({
       ...s,
       ...c.selection,
       view: c.view,
-      layer: representativeLayer(c.selection.layer ?? s.layer),
+      layer,
+      // Seeking must not depend on earlier picks: always the top-weighted expert.
+      expert: routedExpert(layer, c.selection.group, c.selection.token),
       spacing: 1,
     }));
     setDecode(null);
@@ -661,6 +673,14 @@ export default function App() {
           {!inspectedComponent && (
             <p className="explanation-intro">{explanations[state.view]}</p>
           )}
+          {state.view === "expert" &&
+            !data.router.top2.includes(state.expert) && (
+              <p className="explanation-intro">
+                The router did not select expert {state.expert + 1} for token{" "}
+                {state.token + 1} in this layer, so it contributes nothing to
+                this output. It is open for inspection only.
+              </p>
+            )}
 
           <div className="selection">
             {!inspectedComponent && (

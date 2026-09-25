@@ -906,6 +906,42 @@ try {
       await capture("matrix-reading");
     },
   );
+  await check("Focused expert is one the router selected", async () => {
+    const routed = async () => {
+      const { state } = await snapshot(page);
+      const routes = await page.evaluate(
+        () => window.__explorerScene.routeExperts,
+      );
+      expect(routes).toContain(state.expert);
+      return { token: state.token, expert: state.expert, routes };
+    };
+    const evidence = [];
+    await seek(60);
+    evidence.push(await routed());
+    await button("Reset").click();
+    await view("Expert feed-forward network");
+    evidence.push(await routed());
+    for (const token of ["1", "6"]) {
+      await page.getByLabel("Token", { exact: true }).selectOption(token);
+      await settle();
+      evidence.push(await routed());
+    }
+    // An explicit pick may open any expert, but must say it was not routed.
+    const unrouted = [...Array(8).keys()].find(
+      (expert) => !evidence.at(-1).routes.includes(expert),
+    );
+    await page
+      .locator(".router-evidence-table")
+      .getByRole("button", { name: String(unrouted + 1), exact: true })
+      .click();
+    await settle();
+    expect((await snapshot(page)).state.expert).toBe(unrouted);
+    await expect(
+      page.getByText(`The router did not select expert ${unrouted + 1}`),
+    ).toBeVisible();
+    await capture("expert-unrouted-inspection");
+    return evidence;
+  });
   await check(
     "Expert mesh picking and actual moving-camera transitions",
     async () => {
