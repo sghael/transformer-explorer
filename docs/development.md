@@ -10,6 +10,28 @@ npm --prefix web ci
 
 Set `BLENDER_BIN` to the installed Blender executable if it is not on PATH. Run commands from the checkout root, or supply absolute script paths.
 
+Where the official Blender build cannot be installed, the PyPI `bpy` module of the same release can stand in for it. It requires CPython 3.11. `scripts/blender_bpy.py` accepts the headless arguments the build uses and rejects any others:
+
+```sh
+python3.11 -m venv .venv
+.venv/bin/pip install bpy==4.5.13
+. .venv/bin/activate
+BLENDER_BIN="$PWD/scripts/blender_bpy.py" python3 scripts/build.py
+```
+
+This route reproduces the official build's GLB byte for byte. It has no Blender interface, which the pipeline does not need.
+
+## Claude Code cloud sessions
+
+`.claude/hooks/session-start.sh` prepares Claude Code cloud containers and does nothing elsewhere. Those containers cannot reach Blender downloads, GitHub release assets or the Playwright browser CDN; PyPI, npm and the Go module proxy remain reachable. The hook:
+
+- installs `bpy==4.5.13` behind a `blender` wrapper for `scripts/blender_bpy.py`
+- compiles Gitleaks 8.30.1 through the Go module proxy and enables `.githooks`
+- runs `npm --prefix web ci` when the lockfile has changed
+- maps the Chromium revision pinned by Playwright onto the container's preinstalled Chromium when they differ
+
+It exports `BLENDER_BIN`, `PLAYWRIGHT_BROWSERS_PATH` and its tool directory on `PATH`, so the commands in this document run unchanged. Tools stay in the container cache, outside the checkout. A cold run takes about 30 seconds and a repeat run about one second. The preinstalled Chromium can be newer than the tested version; record the version used with browser evidence.
+
 ## Reproducible production build
 
 ```sh

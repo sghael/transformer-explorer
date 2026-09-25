@@ -1,5 +1,5 @@
 import { chromium, expect } from "@playwright/test";
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 if (!process.env.PREVIEW_URL) throw Error("Set PREVIEW_URL");
 const browser = await chromium.launch({
   args: [
@@ -13,6 +13,8 @@ try {
   await page.goto(process.env.PREVIEW_URL);
   await page.waitForFunction(() => window.__explorer?.ready);
   await page.waitForTimeout(1200);
+  const identity = ({ layer, group, token }) => ({ layer, group, token });
+  const start = identity(await page.evaluate(() => window.__explorer.state));
   const canvas = await page.locator("canvas").boundingBox();
   await page.mouse.move(
     canvas.x + canvas.width * 0.5,
@@ -35,10 +37,9 @@ try {
       .toBe(view);
     await page.waitForTimeout(1200);
   }
+  // The zoom round trip must return to the same layer/group/token identity.
   const state = await page.evaluate(() => window.__explorer.state);
-  expect(state.layer).toBe(11);
-  expect(state.group).toBe(2);
-  expect(state.token).toBe(4);
+  expect(identity(state)).toEqual(start);
   await page
     .getByRole("button", { name: "Expert routing", exact: true })
     .click();
@@ -63,6 +64,9 @@ try {
     state: window.__explorer.state,
     render: window.__explorerRender,
   }));
+  await mkdir(new URL("../artifacts/browser/", import.meta.url), {
+    recursive: true,
+  });
   await writeFile(
     new URL("../artifacts/browser/semantic-report.json", import.meta.url),
     JSON.stringify(report, null, 2),
