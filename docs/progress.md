@@ -294,3 +294,24 @@ Browser suites run one at a time against `python3 scripts/serve.py --port 4173` 
 Captures for overview, input, layer, attention, cache, matrix, router, expert and output at both viewports are in artifacts/camera-poses/. All were inspected and match the tuned framing; baseline.json and after-captures.json hold the pose data. The narrow output view clips the end of the "illustrative greedy choice" label; that pose is unchanged.
 
 Remaining defects: the fixed-delay and frame-count-dependent browser checks above; chapter `emphasis`, `dimming`, `visibility` and `pose` fields are still not read; the other lower-priority notes from the audit follow-up stand. Learner comprehension and target-laptop performance remain unmeasured. Next bounded task: make deep-checks' reduced-motion and flow-step reads, and flight-checks' arrival window, wait on rendered frames instead of fixed wall-clock delays.
+
+## Follow-up: frame-based checks, honest chapter data, bundle split
+
+Three browser checks depended on wall-clock timing and failed on slow software rendering:
+- **deep-checks reduced-motion router:** it read the scene a fixed 80 ms after clicking. It now samples every rendered frame until the router is presented, and requires every one of them to be settled. That is stricter than before: any flight frame now fails it.
+- **flight-checks:** it stopped sampling after 7 s of wall time. It now allows 400 rendered frames, because the flight clock advances at most 0.05 s per frame and the longest plan is under 5 s. A 30 s wall-clock limit only guards a stalled renderer.
+- **browser-checks `settle`:** it allowed 8 s of wall time. Orbit damping decays by a fixed factor per frame, so it now allows 900 frames, with a 60 s wall-clock guard.
+
+The "arrived" and convergence assertions themselves are unchanged. With two other agents loading the 4-core container, all three suites passed on build 20261002T212237Z-5726ae.
+
+Chapter data now carries only fields the viewer reads (chapters.json schema 3): `id`, `title`, `caption`, `start`, `end`, `duration`, `view`, `selection` and `cameraAnchor`. Removed:
+- Per chapter: `detailLevel`, `locator`, `emphasis`, `dimming`, `visibility`, `pose`, `animation` and `explanationKey`.
+- Per chapter: `misconception` and `acceptance`. Only a test checked them; the storyboard keeps them for every stop.
+- At the top level: `duration` and `illustrative`.
+
+A unit test pins the key set, and architecture.md has a new Chapter data section. **README.md's chapter requirement is now partly unmet:** visible detail level, emphasis/dimming sets, animation parameters and explanation key are no longer chapter data. The viewer derives dimming from the view and explanations from the selection. Restoring them requires code that reads them.
+
+Performance:
+- **Bundle split:** `web/vite.config.ts` splits the bundle into three, r3f, react and vendor chunks. The single 1,238 kB script (350 kB gzip) becomes 76 kB of app code plus vendor chunks; the largest, three, is 704 kB.
+- **Disposal:** Scene.tsx disposes the cloned scene's materials, and the geometry copies it made, when the scene is replaced or unmounted. Shared GLB geometry is left alone.
+- **Per-frame re-render:** not fixed. Memoizing the explanation panel saved about 0.1 ms per render, inside the measurement noise, and broke 3 review checks through stale handler values, so it was dropped. Scene needs tour time every frame in any case. Moving the tour clock into a store that only Scene and the playback controls subscribe to is the remaining option.
