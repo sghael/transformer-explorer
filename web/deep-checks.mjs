@@ -574,14 +574,48 @@ try {
       await page.waitForFunction(() => window.__explorer?.ready);
       await view("Attention heads");
       const before = await scene();
+      // The scene report is rewritten only when a frame renders, and a slow
+      // renderer can outlast any fixed delay after the click. Record the first
+      // rendered frames that show the request instead. None may start a flight,
+      // and the camera must cut to the target without intermediate poses.
+      await page.evaluate(() => {
+        const frames = (window.__requestFrames = []);
+        let last = null;
+        const record = () => {
+          const current = window.__explorerScene;
+          if (current !== last && current?.selected.view === "router")
+            frames.push(JSON.parse(JSON.stringify(current)));
+          last = current;
+          if (frames.length < 6) requestAnimationFrame(record);
+        };
+        requestAnimationFrame(record);
+      });
       await button("Expert routing").click();
-      await page.waitForTimeout(80);
-      const after = await scene();
-      expect(after.navigationPhase).toBe("settled");
-      expect(after.presentedView).toBe("router");
+      await page.waitForFunction(() => window.__requestFrames.length >= 6);
+      const frames = await page.evaluate(() => window.__requestFrames);
+      const after = frames[0];
+      const pose = (s) => [...s.camera.position, ...s.camera.target];
+      const same = (a, b) => a.every((v, i) => Math.abs(v - b[i]) < 1e-6);
+      const target = pose(frames.at(-1));
+      for (const frame of frames) {
+        expect(frame.navigationPhase).toBe("settled");
+        expect(frame.presentedView).toBe("router");
+        expect(
+          same(pose(frame), pose(before)) || same(pose(frame), target),
+        ).toBe(true);
+      }
+      expect(same(target, pose(before))).toBe(false);
       expect(identity(after)).toEqual(identity(before));
       await capture("reduced-motion-router");
-      return { before, after };
+      return {
+        before,
+        after,
+        frames: frames.map((f) => ({
+          navigationPhase: f.navigationPhase,
+          presentedView: f.presentedView,
+          camera: f.camera,
+        })),
+      };
     },
   );
   await check("No browser errors", async () => {
