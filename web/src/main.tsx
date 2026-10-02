@@ -5,7 +5,7 @@ import LoadBoundary from "./LoadBoundary";
 import "./style.css";
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <LoadBoundary>
+    <LoadBoundary scope="exhibit">
       <App />
     </LoadBoundary>
   </React.StrictMode>,

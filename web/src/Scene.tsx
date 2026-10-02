@@ -6,11 +6,25 @@ import {
   useRef,
   useState,
 } from "react";
-import { Canvas, events, useFrame, useThree } from "@react-three/fiber";
+import {
+  Canvas,
+  events,
+  useFrame,
+  useThree,
+  type ThreeEvent,
+} from "@react-three/fiber";
 import { OrbitControls, useGLTF, Line, Html } from "@react-three/drei";
+import { diagnosticsEnabled } from "./diagnostics";
+import { WebGLUnavailableError } from "./LoadBoundary";
 import * as THREE from "three";
 import type { OrbitControls as Controls } from "three-stdlib";
-import { sample, type View } from "./data";
+import {
+  routerOutputProgress,
+  sample,
+  tourDuration,
+  tourTime,
+  type View,
+} from "./data";
 import { routerPaths, pointAlongPath, type Point } from "./spatial";
 import Flow from "./Flow";
 import { belongsToFocus, type NormFocus } from "./context";
@@ -23,6 +37,12 @@ import {
   type FlightLeg,
 } from "./navigation";
 import { layout, macroX, macroPaths, stackEnds, type MacroId } from "./layout";
+export interface ReadyInfo {
+  nodes: number;
+  semanticIds: string[];
+  assetLoaded: boolean;
+  checks: Record<string, boolean>;
+}
 export type ContextMode = "full" | "muted" | "isolated";
 export type Selection = {
   layer: number;
@@ -47,8 +67,8 @@ type Props = {
   cameraRevision: number;
   lowQuality: boolean;
   onView: (view: View) => void;
-  onPick: (id: string, data: Record<string, any>) => void;
-  onReady: (info: any) => void;
+  onPick: (id: string, data: THREE.Object3D["userData"]) => void;
+  onReady: (info: ReadyInfo) => void;
   cameraRef: React.RefObject<CameraPose | null>;
   restorePose: CameraPose | null;
 };
@@ -185,21 +205,21 @@ function tokenPose(time: number, spacing: number, layer: number): Point {
   const x = (id: MacroId): Point => [macroX(id, spacing), 0, 0];
   const feedback = macroPaths(spacing).generation_feedback;
   const stops: [number, Point][] = [
-    [0, x("input")],
-    [6, x("input")],
-    [11, x("embedding")],
-    [13, [first, 0, 0]],
-    [20, layerOrigin(layer, spacing)],
-    [66, layerOrigin(layer, spacing)],
-    [70, [last, 0, 0]],
-    [72, x("final_norm")],
-    [73, x("lm_head")],
-    [74, x("output")],
-    [74.5, feedback[1]],
-    [75.5, feedback[2]],
-    [78.5, feedback[3]],
-    [79.5, feedback[4]],
-    [80, x("input")],
+    [tourTime("overview"), x("input")],
+    [tourTime("embedding"), x("input")],
+    [tourTime("embedding", 5 / 7), x("embedding")],
+    [tourTime("stack"), [first, 0, 0]],
+    [tourTime("attention-entry"), layerOrigin(layer, spacing)],
+    [tourTime("output"), layerOrigin(layer, spacing)],
+    [tourTime("output", 1 / 2), [last, 0, 0]],
+    [tourTime("output", 3 / 4), x("final_norm")],
+    [tourTime("output", 7 / 8), x("lm_head")],
+    [tourTime("decode"), x("output")],
+    [tourTime("decode", 1 / 12), feedback[1]],
+    [tourTime("decode", 1 / 4), feedback[2]],
+    [tourTime("decode", 3 / 4), feedback[3]],
+    [tourTime("decode", 11 / 12), feedback[4]],
+    [tourDuration, x("input")],
   ];
   const end = stops.findIndex(([t]) => t > time);
   if (end < 0) return stops.at(-1)![1];
@@ -335,7 +355,7 @@ function Effects({
               <meshBasicMaterial color="#f3c779" />
             </mesh>
           )}
-          {p.time >= 74 && (
+          {p.time >= tourTime("decode") && (
             <>
               <Line
                 points={macroPaths(p.state.spacing).generation_feedback}
@@ -530,7 +550,7 @@ function Effects({
         !p.flowPlaying &&
         p.flowTime === 0 &&
         p.top2.map((e, i) => {
-          const t = Math.min(1, Math.max(0, (p.time - 49) / 7));
+          const t = routerOutputProgress(p.time);
           const position = pointAlongPath(routerPaths(e).output, t);
           return (
             <mesh
@@ -546,7 +566,17 @@ function Effects({
       {view === "layer" && (
         <mesh
           position={[
-            Math.max(-9, Math.min(10, -9 + ((p.time - 20) / 9) * 7)),
+            Math.max(
+              -9,
+              Math.min(
+                10,
+                -9 +
+                  ((p.time - tourTime("attention-entry")) /
+                    (tourTime("attention-entry", 1) -
+                      tourTime("attention-entry"))) *
+                    7,
+              ),
+            ),
             0.2,
             0,
           ]}
@@ -574,8 +604,7 @@ function Effects({
 }
 function Model(p: Props) {
   const { scene: original } = useGLTF(
-    "./models/" +
-      ((import.meta as any).env.VITE_ASSET_NAME || "transformer.glb"),
+    "./models/" + (import.meta.env.VITE_ASSET_NAME || "transformer.glb"),
   );
   const scene = useMemo(() => {
     const s = original.clone(true);
@@ -650,17 +679,18 @@ function Model(p: Props) {
         mesh.raycast = THREE.Mesh.prototype.raycast;
       });
   }, [scene]);
-  const lastPick = useRef<Record<string, any> | null>(null);
+  const lastPick = useRef<THREE.Object3D["userData"] | null>(null);
   const { camera, gl, size, scene: renderScene, raycaster } = useThree();
   useEffect(() => {
-    (window as any).__explorerInspect = () => ({
+    if (!diagnosticsEnabled) return;
+    window.__explorerInspect = () => ({
       camera,
       scene: renderScene,
       gl,
       raycaster,
     });
     return () => {
-      delete (window as any).__explorerInspect;
+      delete window.__explorerInspect;
     };
   }, [camera, renderScene, gl, raycaster]);
   const destination = useRef<CameraPose | null>(null);
@@ -807,6 +837,7 @@ function Model(p: Props) {
   }
   useLayoutEffect(() => {
     applySelectionLayout();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the data the layout reads; the helper is recreated every render
   }, [scene, nodes, p.state.layer, p.state.spacing, p.top2, texture]);
   function normPose(id: NormFocus): CameraPose {
     const object = nodes.get(id)!;
@@ -931,6 +962,7 @@ function Model(p: Props) {
       navigation.current = null;
       if (controls.current) controls.current.enabled = !p.playing;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- decide on a flight only when the view key changes
   }, [
     nodes,
     p.state.view,
@@ -955,6 +987,7 @@ function Model(p: Props) {
       destination.current = p.restorePose;
       moving.current = true;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run only when a saved view is restored
   }, [p.restorePose]);
   useEffect(() => {
     scene.updateMatrixWorld(true);
@@ -986,6 +1019,7 @@ function Model(p: Props) {
       assetLoaded: true,
       checks,
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- report readiness once per loaded asset
   }, [nodes, scene]);
   useFrame((_, dt) => {
     if (navigation.current && controls.current) {
@@ -1120,132 +1154,142 @@ function Model(p: Props) {
         position: camera.position.toArray(),
         target: controls.current.target.toArray(),
       };
-    (window as any).__explorerRender = {
-      calls: gl.info.render.calls,
-      triangles: gl.info.render.triangles,
-      textures: gl.info.memory.textures,
-      geometries: gl.info.memory.geometries,
-    };
-    const selectedIds = [
-      "representative_layer",
-      "focus",
-      "stack",
-      `group_${p.state.group}`,
-      `q_${p.state.group * 4}`,
-      `score_${p.state.group}`,
-      "router",
-      "input",
-      "embedding",
-      "final_norm",
-      "norm1",
-      "norm2",
-      "lm_head",
-      "output",
-      ...Array.from({ length: 8 }, (_, group) => `cache_link_${group}`),
-      ...Array.from(
-        { length: 8 },
-        (_, group) => `cache_link_${group}_segment_0`,
-      ),
-      ...Array.from({ length: 8 }, (_, group) => `cache_${group}`),
-      ...Array.from({ length: 8 }, (_, group) => `k_${group}`),
-      ...Array.from({ length: 8 }, (_, group) => `score_${group}`),
-      ...Array.from({ length: 8 }, (_, group) => `cache_k_${group}`),
-      ...Array.from({ length: 8 }, (_, group) => `cache_v_${group}`),
-      `expert_${p.state.expert}`,
-      "expert_detail",
-    ];
-    const rect = gl.domElement.getBoundingClientRect();
-    (window as any).__explorerScene = {
-      selected: { ...p.state },
-      contextMode: p.contextMode,
-      normFocus: p.normFocus ?? null,
-      presentedView: visibleView,
-      navigationPhase: navigation.current?.phase ?? "settled",
-      navigationElapsed: navigation.current?.elapsed ?? 0,
-      expandedCount: nodes.get("focus")?.visible ? 1 : 0,
-      decode: p.decode,
-      flowTime: p.flowTime,
-      flowPlaying: p.flowPlaying,
-      flowPackets: renderScene.children.flatMap(function collect(o): any[] {
-        return [
-          ...(o.userData.flowPacket
-            ? [
-                {
-                  kind: o.userData.flowPacket,
-                  position: o.getWorldPosition(new THREE.Vector3()).toArray(),
-                  visible: isVisibleInScene(o),
-                },
-              ]
-            : []),
-          ...o.children.flatMap(collect),
-        ];
-      }),
-      time: p.time,
-      routeExperts: p.top2,
-      routerPaths: p.top2.map((expert) => {
-        const paths = routerPaths(expert);
-        return { expert, ...paths, points: [...paths.input, ...paths.output] };
-      }),
-      routerOutputProgress: Math.min(1, Math.max(0, (p.time - 49) / 7)),
-      lastPick: lastPick.current,
-      routerOutputPositions:
-        p.state.view === "router"
-          ? p.top2.map((expert) => ({
-              expert,
-              position: renderScene
-                .getObjectByName("output-vector" + expert)
-                ?.getWorldPosition(new THREE.Vector3())
-                .toArray(),
-            }))
-          : [],
-      routeWeights: values.router.weights,
-      attentionRow: values.attention[p.state.token],
-      tokenPosition: tokenPose(p.time, p.state.spacing, p.state.layer),
-      generationNewToken: p.time >= 74,
-      chosenChunk: values.candidates.reduce((best, item) =>
-        item.logit > best.logit ? item : best,
-      ).token,
-      greedyChoiceIllustrative: true,
-      cache: {
-        layer: p.state.layer,
-        group: p.state.group,
-        retainedKeys: values.cache.keys,
-        retainedValues: values.cache.values,
-        newKey: p.decode ? values.cache.nextKey : null,
-        newValue: p.decode ? values.cache.nextValue : null,
-      },
-      attentionKeys: Array.from({ length: p.state.token + 1 }, (_, i) => i),
-      cacheRows: p.decode ? 9 : 8,
-      camera: p.cameraRef.current,
-      nodes: Object.fromEntries(
-        selectedIds.map((id) => {
-          const o = nodes.get(id)!;
-          const world = o.getWorldPosition(new THREE.Vector3());
-          const screen = world.clone().project(camera);
-          let visible = true;
-          for (let a: THREE.Object3D | null = o; a; a = a.parent)
-            visible = visible && a.visible;
+    if (diagnosticsEnabled) {
+      window.__explorerRender = {
+        calls: gl.info.render.calls,
+        triangles: gl.info.render.triangles,
+        textures: gl.info.memory.textures,
+        geometries: gl.info.memory.geometries,
+      };
+      const selectedIds = [
+        "representative_layer",
+        "focus",
+        "stack",
+        `group_${p.state.group}`,
+        `q_${p.state.group * 4}`,
+        `score_${p.state.group}`,
+        "router",
+        "input",
+        "embedding",
+        "final_norm",
+        "norm1",
+        "norm2",
+        "lm_head",
+        "output",
+        ...Array.from({ length: 8 }, (_, group) => `cache_link_${group}`),
+        ...Array.from(
+          { length: 8 },
+          (_, group) => `cache_link_${group}_segment_0`,
+        ),
+        ...Array.from({ length: 8 }, (_, group) => `cache_${group}`),
+        ...Array.from({ length: 8 }, (_, group) => `k_${group}`),
+        ...Array.from({ length: 8 }, (_, group) => `score_${group}`),
+        ...Array.from({ length: 8 }, (_, group) => `cache_k_${group}`),
+        ...Array.from({ length: 8 }, (_, group) => `cache_v_${group}`),
+        `expert_${p.state.expert}`,
+        "expert_detail",
+      ];
+      const rect = gl.domElement.getBoundingClientRect();
+      window.__explorerScene = {
+        selected: { ...p.state },
+        contextMode: p.contextMode,
+        normFocus: p.normFocus ?? null,
+        presentedView: visibleView,
+        navigationPhase: navigation.current?.phase ?? "settled",
+        navigationElapsed: navigation.current?.elapsed ?? 0,
+        expandedCount: nodes.get("focus")?.visible ? 1 : 0,
+        decode: p.decode,
+        flowTime: p.flowTime,
+        flowPlaying: p.flowPlaying,
+        flowPackets: renderScene.children.flatMap(function collect(o): {
+          kind: string;
+          position: number[];
+          visible: boolean;
+        }[] {
           return [
-            id,
-            {
-              position: o.position.toArray(),
-              scale: o.getWorldScale(new THREE.Vector3()).toArray(),
-              world: world.toArray(),
-              visible,
-              opacity:
-                o instanceof THREE.Mesh
-                  ? (o.material as THREE.Material).opacity
-                  : 1,
-              semantic: o.userData,
-              screen: [
-                rect.left + ((screen.x + 1) * rect.width) / 2,
-                rect.top + ((1 - screen.y) * rect.height) / 2,
-              ],
-            },
+            ...(o.userData.flowPacket
+              ? [
+                  {
+                    kind: o.userData.flowPacket,
+                    position: o.getWorldPosition(new THREE.Vector3()).toArray(),
+                    visible: isVisibleInScene(o),
+                  },
+                ]
+              : []),
+            ...o.children.flatMap(collect),
           ];
         }),
-      ),
-    };
+        time: p.time,
+        routeExperts: p.top2,
+        routerPaths: p.top2.map((expert) => {
+          const paths = routerPaths(expert);
+          return {
+            expert,
+            ...paths,
+            points: [...paths.input, ...paths.output],
+          };
+        }),
+        routerOutputProgress: routerOutputProgress(p.time),
+        lastPick: lastPick.current,
+        routerOutputPositions:
+          p.state.view === "router"
+            ? p.top2.map((expert) => ({
+                expert,
+                position: renderScene
+                  .getObjectByName("output-vector" + expert)
+                  ?.getWorldPosition(new THREE.Vector3())
+                  .toArray(),
+              }))
+            : [],
+        routeWeights: values.router.weights,
+        attentionRow: values.attention[p.state.token],
+        tokenPosition: tokenPose(p.time, p.state.spacing, p.state.layer),
+        generationNewToken: p.time >= tourTime("decode"),
+        chosenChunk: values.candidates.reduce((best, item) =>
+          item.logit > best.logit ? item : best,
+        ).token,
+        greedyChoiceIllustrative: true,
+        cache: {
+          layer: p.state.layer,
+          group: p.state.group,
+          retainedKeys: values.cache.keys,
+          retainedValues: values.cache.values,
+          newKey: p.decode ? values.cache.nextKey : null,
+          newValue: p.decode ? values.cache.nextValue : null,
+        },
+        attentionKeys: Array.from({ length: p.state.token + 1 }, (_, i) => i),
+        cacheRows: p.decode ? 9 : 8,
+        camera: p.cameraRef.current,
+        nodes: Object.fromEntries(
+          selectedIds.map((id) => {
+            const o = nodes.get(id)!;
+            const world = o.getWorldPosition(new THREE.Vector3());
+            const screen = world.clone().project(camera);
+            let visible = true;
+            for (let a: THREE.Object3D | null = o; a; a = a.parent)
+              visible = visible && a.visible;
+            return [
+              id,
+              {
+                position: o.position.toArray(),
+                scale: o.getWorldScale(new THREE.Vector3()).toArray(),
+                world: world.toArray(),
+                visible,
+                opacity:
+                  o instanceof THREE.Mesh
+                    ? (o.material as THREE.Material).opacity
+                    : 1,
+                semantic: o.userData,
+                screen: [
+                  rect.left + ((screen.x + 1) * rect.width) / 2,
+                  rect.top + ((1 - screen.y) * rect.height) / 2,
+                ],
+              },
+            ];
+          }),
+        ),
+      };
+    }
   });
   return (
     <>
@@ -1284,10 +1328,10 @@ function Model(p: Props) {
       )}
       <primitive
         object={scene}
-        onClick={(e: any) => {
+        onClick={(e: ThreeEvent<MouseEvent>) => {
           if (navigation.current) return;
           e.stopPropagation();
-          let o = e.object;
+          let o: THREE.Object3D | null = e.object;
           while (o && !o.userData.interactive) o = o.parent;
           if (o) {
             lastPick.current = {
@@ -1429,7 +1473,22 @@ function Model(p: Props) {
     </>
   );
 }
+function webglAvailable() {
+  try {
+    const gl =
+      document.createElement("canvas").getContext("webgl2") ??
+      document.createElement("canvas").getContext("webgl");
+    gl?.getExtension("WEBGL_lose_context")?.loseContext();
+    return !!gl;
+  } catch {
+    return false;
+  }
+}
 export default function Scene(p: Props) {
+  // React Three Fiber creates its renderer asynchronously and would leave the
+  // page loading forever; check up front so the boundary can explain instead.
+  const [webgl] = useState(webglAvailable);
+  if (!webgl) throw new WebGLUnavailableError("WebGL is unavailable");
   return (
     <Canvas
       events={sceneEvents}

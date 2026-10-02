@@ -50,6 +50,21 @@ export interface Chapter {
 }
 export const chapters = chapterData.chapters as Chapter[];
 export const tourDuration = chapters.at(-1)!.end;
+/** Absolute tour time at a fraction of a chapter, so choreography follows chapters.json. */
+export function tourTime(id: string, fraction = 0) {
+  const chapter = chapters.find((c) => c.id === id);
+  if (!chapter) throw new RangeError(`Unknown chapter ${id}`);
+  return chapter.start + fraction * chapter.duration;
+}
+// The illustrative router output travels during the latter part of its chapter.
+export const routerOutputStart = tourTime("router", 4 / 11);
+export function routerOutputProgress(time: number) {
+  const end = tourTime("router", 1);
+  return Math.min(
+    1,
+    Math.max(0, (time - routerOutputStart) / (end - routerOutputStart)),
+  );
+}
 export function chapterAt(time: number): Chapter {
   const t = Number.isNaN(time) ? 0 : Math.max(0, Math.min(tourDuration, time));
   return (
@@ -68,14 +83,19 @@ export function softmax(logits: number[]): number[] {
   const total = exp.reduce((sum, value) => sum + value, 0);
   return exp.map((value) => value / total);
 }
+// Murmur3's finalizer: every input bit affects every output bit, so neighboring
+// coordinates do not produce correlated or repeated illustrative values.
+function mix(x: number): number {
+  x = Math.imul(x ^ (x >>> 16), 0x85ebca6b);
+  x = Math.imul(x ^ (x >>> 13), 0xc2b2ae35);
+  return (x ^ (x >>> 16)) >>> 0;
+}
 // Stateless integer hashing makes any sample reproducible regardless of navigation order.
 function value(seed: number, ...coordinates: number[]): number {
-  let hash = seed | 0;
-  for (const coordinate of coordinates) {
-    hash = Math.imul(hash ^ (coordinate + 0x9e3779b9), 0x85ebca6b);
-    hash ^= hash >>> 13;
-  }
-  return ((hash >>> 0) / 4294967296) * 2 - 1;
+  let hash = mix(seed);
+  for (const coordinate of coordinates)
+    hash = mix(hash ^ mix(coordinate + 0x9e3779b9));
+  return (hash / 4294967296) * 2 - 1;
 }
 function index(name: string, input: number, count: number) {
   if (!Number.isInteger(input) || input < 0 || input >= count)
@@ -86,6 +106,12 @@ export function rotate([x, y]: Pair, angle: number): Pair {
     x * Math.cos(angle) - y * Math.sin(angle),
     x * Math.sin(angle) + y * Math.cos(angle),
   ];
+}
+// RoPE rotates channel pair (2i, 2i + 1) by position · theta^(−2i / head_dim).
+export function ropeAngle(position: number, channel: number) {
+  return (
+    position / architecture.rope_theta ** (channel / architecture.head_dim)
+  );
 }
 export function cacheRows(
   layer: number,
@@ -109,7 +135,7 @@ export function cacheRows(
           ? []
           : rotate(
               [raw[channel], raw[channel + 1]],
-              position / 10000 ** (channel / architecture.head_dim),
+              ropeAngle(position, channel),
             ),
       );
     });
@@ -158,8 +184,10 @@ export function sample(
   const cache = cacheRows(layer, group, tokens.length, seed);
   const appended = cacheRows(layer, group, tokens.length + 1, seed);
   const candidateTokens = [".", "and", "with", "today", "again"];
+  // The LM head reads the final position after the last layer, so next-token
+  // scores do not depend on the selected layer or token.
   const outputLogits = candidateTokens.map(
-    (_, candidate) => value(seed, 6, layer, token, candidate) * 3,
+    (_, candidate) => value(seed, 6, candidate) * 3,
   );
   const outputProbabilities = softmax(outputLogits);
   // A small deterministic SwiGLU example illustrates output combination. These
