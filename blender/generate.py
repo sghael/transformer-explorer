@@ -16,7 +16,7 @@ from mathutils import Vector
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = json.loads((ROOT / "shared/model-spec.json").read_text())
 LAYOUT = json.loads((ROOT / "shared/layout.json").read_text())
-assert LAYOUT["schema_version"] == 1
+assert LAYOUT["schema_version"] == 2
 A = SPEC["architecture"]
 assert SPEC["schema_version"] == 1
 assert A["attention_heads"] == A["kv_heads"] * 4
@@ -38,6 +38,15 @@ def convert(p):
 
 def browser(p):
     return [round(p[0], 6), round(p[2], 6), round(-p[1], 6)]
+
+
+def camera_anchors():
+    """World-space anchor pose per view camera in layout.json."""
+    anchors = {}
+    for camera in LAYOUT["cameras"].values():
+        scale = LAYOUT["focus_scale"] if camera["frame"] == "layer" else 1
+        anchors[camera["anchor"]] = tuple(tuple(v*scale for v in camera[key]) for key in ("position", "target"))
+    return anchors
 
 
 def node(identifier, component, parent=None, pos=(0, 0, 0), lod=1,
@@ -339,20 +348,10 @@ def generate():
                  [tuple(v*.3 for v in point) for point in points], color,
                  thickness=.055*.3, expert=e)
 
-    anchors = {
-        "OVERVIEW": ((0,7,14),(.5,0,0)),
-        "LAYER": ((17,13,20),(1,0,0)),
-        "ATTENTION": ((.8,6,10),(-5,0,0)),
-        "CACHE": ((-1,2,8),(-4.7,-2.2,0)),
-        "MOE": ((13,8,13),(5,0,0)),
-        "EXPERT": ((10,3,8),(5,-2,0)),
-        "INPUT": ((-6.25,3,6),(-6.25,0,0)),
-        "LM_HEAD": ((7,3,6),(7,0,0)),
-        "MATRIX": ((-3.35,1.45,9),(-3.35,1.45,0)),
-        "TEST": ((4,5,6),(1,2,3)),
-    }
-    for name, (pos, target) in anchors.items():
-        node(f"cam_{name.lower()}", "camera_anchor", root, pos, name=f"CAM_{name}",
+    # View framing lives in layout.json; each anchor is a view's base pose,
+    # before the viewer adds group/expert depth or narrow-viewport fit.
+    for name, (pos, target) in {**camera_anchors(), "CAM_TEST": ((4,5,6),(1,2,3))}.items():
+        node(name.lower(), "camera_anchor", root, pos, name=name,
              interactive=False, lod=0, target_x=target[0], target_y=target[1], target_z=target[2])
     box("coordinate_sentinel", "diagnostic", root, (1,2,3), (.2,.4,.6), "white",
         interactive=False, lod=0, name="COORDINATE_SENTINEL")
