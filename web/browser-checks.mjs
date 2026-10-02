@@ -237,11 +237,17 @@ const settle = async (target = page) => {
         let frame;
         let previous = null;
         let stableSince = null;
-        const timeout = setTimeout(() => {
+        // Orbit damping decays per rendered frame, not per second, so allow a
+        // frame budget; the wall-clock limit only guards a stalled renderer.
+        let frames = 0;
+        const fail = () => {
           cancelAnimationFrame(frame);
+          clearTimeout(timeout);
           reject(new Error("Camera did not converge after navigation settled"));
-        }, 8000);
+        };
+        const timeout = setTimeout(fail, 60000);
         const observe = (now) => {
+          if (++frames > 900) return fail();
           const current = window.__explorerScene;
           const pose = window.__explorer?.camera;
           const coordinates = pose ? [...pose.position, ...pose.target] : null;

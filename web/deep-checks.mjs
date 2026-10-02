@@ -574,14 +574,29 @@ try {
       await page.waitForFunction(() => window.__explorer?.ready);
       await view("Attention heads");
       const before = await scene();
+      // Record every rendered frame until the router appears, instead of
+      // reading after a fixed delay that a slow frame can outlast.
+      await page.evaluate(() => {
+        window.__reducedPhases = [];
+        const sample = () => {
+          const current = window.__explorerScene;
+          window.__reducedPhases.push(current.navigationPhase);
+          if (current.presentedView !== "router") requestAnimationFrame(sample);
+        };
+        requestAnimationFrame(sample);
+      });
       await button("Expert routing").click();
-      await page.waitForTimeout(80);
+      await page.waitForFunction(
+        () => window.__explorerScene.presentedView === "router",
+      );
       const after = await scene();
+      const phases = await page.evaluate(() => window.__reducedPhases);
+      expect(phases.every((phase) => phase === "settled")).toBe(true);
       expect(after.navigationPhase).toBe("settled");
       expect(after.presentedView).toBe("router");
       expect(identity(after)).toEqual(identity(before));
       await capture("reduced-motion-router");
-      return { before, after };
+      return { before, after, frames: phases.length };
     },
   );
   await check("No browser errors", async () => {

@@ -193,9 +193,13 @@ try {
           visibilityChanges,
           changed,
         });
+        // The flight clock advances at most 0.05 s per rendered frame, so the
+        // longest plan (under 5 s) needs about 100 frames however slow they are.
+        // Allow 400 frames; the wall-clock limit only guards a stalled renderer.
         if (
           (settledAt !== null && now - settledAt > 200) ||
-          now - began > 7000
+          window.__flightFrames.length > 400 ||
+          now - began > 30000
         ) {
           window.__flightDone = true;
           return;
