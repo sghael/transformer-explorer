@@ -8,7 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LAYOUT = json.loads((ROOT / "shared/layout.json").read_text())
-assert LAYOUT["schema_version"] == 1
+assert LAYOUT["schema_version"] == 2
 
 
 def close(actual, expected):
@@ -390,10 +390,14 @@ def validate(path):
             extras = node["extras"]
             anchors[node["name"]] = {"position": world(index),
                                      "target": [extras[f"target_{axis}"] for axis in "xyz"]}
-    assert len(anchors) == 10
-    for name,position,target in [("CAM_OVERVIEW",[0,7,14],[.5,0,0]),
-                                  ("CAM_INPUT",[-6.25,3,6],[-6.25,0,0]),
-                                  ("CAM_LM_HEAD",[7,3,6],[7,0,0])]:
+    # Each view camera in layout.json is exported as its base world pose; the
+    # layer frame's interior is the focus assembly at focus_scale.
+    expected = {"CAM_TEST": ([4, 5, 6], [1, 2, 3])}
+    for camera in LAYOUT["cameras"].values():
+        scale = LAYOUT["focus_scale"] if camera["frame"] == "layer" else 1
+        expected[camera["anchor"]] = tuple([v*scale for v in camera[key]] for key in ("position", "target"))
+    assert set(anchors) == set(expected), (sorted(anchors), sorted(expected))
+    for name, (position, target) in expected.items():
         close(anchors[name]["position"], position)
         close(anchors[name]["target"], target)
     scene_report_path = ROOT / "artifacts/scene-report.json"

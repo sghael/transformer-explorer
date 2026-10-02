@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "duration": 80,
   "illustrative": true,
   "chapters": [
@@ -11,7 +11,6 @@
       "duration": 6,
       "view": "overview",
       "cameraAnchor": "CAM_OVERVIEW",
-      "cameraTarget": [0, 0, 0],
       "detailLevel": 0,
       "selection": {
         "layer": 15,
@@ -51,7 +50,6 @@
       "duration": 7,
       "view": "input",
       "cameraAnchor": "CAM_INPUT",
-      "cameraTarget": [-6.25, 0, 0],
       "detailLevel": 1,
       "selection": {
         "layer": 15,
@@ -85,7 +83,6 @@
       "duration": 7,
       "view": "layer",
       "cameraAnchor": "CAM_LAYER",
-      "cameraTarget": [0, 0, 0],
       "detailLevel": 1,
       "selection": {
         "layer": 15,
@@ -119,7 +116,6 @@
       "duration": 9,
       "view": "layer",
       "cameraAnchor": "CAM_LAYER",
-      "cameraTarget": [0, 0, 0],
       "detailLevel": 1,
       "selection": {
         "layer": 15,
@@ -153,7 +149,6 @@
       "duration": 9,
       "view": "attention",
       "cameraAnchor": "CAM_ATTENTION",
-      "cameraTarget": [-5, 0, 0],
       "detailLevel": 2,
       "selection": {
         "layer": 15,
@@ -187,7 +182,6 @@
       "duration": 7,
       "view": "cache",
       "cameraAnchor": "CAM_CACHE",
-      "cameraTarget": [-5, 0, 0],
       "detailLevel": 2,
       "selection": {
         "layer": 15,
@@ -221,7 +215,6 @@
       "duration": 11,
       "view": "router",
       "cameraAnchor": "CAM_MOE",
-      "cameraTarget": [4, 0, 0],
       "detailLevel": 2,
       "selection": {
         "layer": 15,
@@ -255,7 +248,6 @@
       "duration": 10,
       "view": "expert",
       "cameraAnchor": "CAM_EXPERT",
-      "cameraTarget": [5, 0, 0],
       "detailLevel": 2,
       "selection": {
         "layer": 15,
@@ -295,7 +287,6 @@
       "duration": 8,
       "view": "output",
       "cameraAnchor": "CAM_LM_HEAD",
-      "cameraTarget": [7, 0, 0],
       "detailLevel": 1,
       "selection": {
         "layer": 15,
@@ -335,7 +326,6 @@
       "duration": 6,
       "view": "overview",
       "cameraAnchor": "CAM_OVERVIEW",
-      "cameraTarget": [0, 0, 0],
       "detailLevel": 0,
       "selection": {
         "layer": 15,

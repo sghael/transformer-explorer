@@ -451,7 +451,7 @@ try {
     },
   );
   await check(
-    "Loaded GLB preserves coordinates, dimensions, camera anchor and layer count",
+    "Loaded GLB preserves coordinates, dimensions, camera anchors and layer count",
     async () => {
       const ready = (await snapshot(page)).ready;
       expect(ready.assetLoaded).toBe(true);
@@ -459,6 +459,7 @@ try {
         sentinel: true,
         dimensions: true,
         anchor: true,
+        cameraAnchors: true,
         layerCount: true,
       });
       return ready.checks;

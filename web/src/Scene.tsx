@@ -31,12 +31,12 @@ import { belongsToFocus, type NormFocus } from "./context";
 import {
   FOCUS_SCALE,
   layerOrigin,
-  inLayer,
   planFlight,
   flightPose,
   type FlightLeg,
 } from "./navigation";
 import { layout, macroX, macroPaths, stackEnds, type MacroId } from "./layout";
+import { anchorPose, cameras, viewPose } from "./camera";
 export interface ReadyInfo {
   nodes: number;
   semanticIds: string[];
@@ -103,17 +103,6 @@ function stopOrbitInertia(controls: Controls) {
   controls.target.copy(target);
   controls.update();
 }
-const anchors: Record<View, string> = {
-  overview: "CAM_OVERVIEW",
-  input: "CAM_INPUT",
-  layer: "CAM_LAYER",
-  attention: "CAM_ATTENTION",
-  cache: "CAM_CACHE",
-  router: "CAM_MOE",
-  expert: "CAM_EXPERT",
-  matrix: "CAM_MATRIX",
-  output: "CAM_LM_HEAD",
-};
 const labelStyle: React.CSSProperties = {
   whiteSpace: "nowrap",
   font: "12px system-ui",
@@ -855,54 +844,7 @@ function Model(p: Props) {
     };
   }
   function poseFor(view: View): CameraPose {
-    const aspect = size.width / size.height;
-    const distanceScale = Math.max(1, 1.6 / aspect);
-    const z = (p.state.group - 3.5) * 1.2;
-    let target = [0, 0.6, 0],
-      position = [4, 7, 16 * distanceScale];
-    if (view === "attention") {
-      target = [-4.8, -0.25, z];
-      position = [-1.8, 2.8, z + 7];
-    }
-    if (view === "cache") {
-      target = [-4.9, -2.36, z];
-      position = [-4.9, -2.36, z + 1.1];
-    }
-    if (view === "matrix") {
-      target = [-3.35, 1.45, z];
-      position = [-3.35, 1.45, z + 1.15];
-    }
-    if (view === "expert") {
-      const depth = (p.state.expert - 3.5) * 1.1;
-      target = [5, 0, depth];
-      position = [5 + 0.55 * distanceScale, 0.45 * distanceScale, depth + 0.72];
-    }
-    if (view === "router") {
-      target = [5, 0, 0];
-      position = [12, 9, 2];
-    }
-    if (["overview", "input", "output"].includes(view)) {
-      if (view === "overview") {
-        const fit =
-          (macroX("output", p.state.spacing) -
-            macroX("input", p.state.spacing) +
-            2) /
-          33;
-        return { position: [0, 12 * fit, 25 * fit], target: [0.5, 0, 0] };
-      }
-      const anchor = nodes.get(anchors[view])!;
-      const d = anchor.userData;
-      const shift =
-        macroX(view === "input" ? "input" : "output", p.state.spacing) -
-        layout.macro_nodes[view === "input" ? "input" : "output"].x;
-      const position = anchor.getWorldPosition(new THREE.Vector3()).toArray();
-      position[0] += shift;
-      return { position, target: [d.target_x + shift, d.target_y, d.target_z] };
-    }
-    return {
-      position: inLayer(position, p.state.layer, p.state.spacing),
-      target: inLayer(target, p.state.layer, p.state.spacing),
-    };
+    return viewPose(view, p.state, size.width / size.height);
   }
   useEffect(() => {
     const viewKey = `${p.state.view}:${p.state.layer}:${p.state.group}:${p.state.expert}:${p.state.spacing}:${p.normFocus ?? ""}`;
@@ -1006,6 +948,21 @@ function Model(p: Props) {
         test
           .getWorldPosition(new THREE.Vector3())
           .distanceTo(new THREE.Vector3(4, 5, 6)) < 1e-5,
+      // Each exported view anchor carries the framing the viewer reads from layout.json.
+      cameraAnchors: (Object.keys(cameras) as View[]).every((view) => {
+        const anchor = nodes.get(cameras[view].anchor);
+        if (!anchor) return false;
+        const { position, target } = anchorPose(view);
+        const d = anchor.userData;
+        return (
+          anchor
+            .getWorldPosition(new THREE.Vector3())
+            .distanceTo(new THREE.Vector3(...(position as Point))) < 1e-5 &&
+          new THREE.Vector3(d.target_x, d.target_y, d.target_z).distanceTo(
+            new THREE.Vector3(...(target as Point)),
+          ) < 1e-5
+        );
+      }),
       layerCount:
         [...new Set(nodes.values())].filter(
           (o) => o.userData.component === "decoder_layer",

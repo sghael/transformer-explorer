@@ -1,6 +1,8 @@
 import layout from "../../shared/layout.json";
 import type { Point } from "./spatial";
 
+if (layout.schema_version !== 2)
+  throw Error("layout.json must use schema version 2");
 export { layout };
 export type MacroId = keyof typeof layout.macro_nodes;
 export const representativeLayers = [0, 15, 31] as const;
