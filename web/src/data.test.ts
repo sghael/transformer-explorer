@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import spec from "../../shared/model-spec.json";
+import chapterData from "../../shared/chapters.json";
 import {
   architecture,
   cacheRows,
@@ -124,7 +125,7 @@ test("timeline covers 80 seconds without gaps and seeks at precise chapter bound
     assert.equal(chapterAt(chapter.start).id, chapter.id);
     assert.equal(chapterAt(chapter.end - 0.001).id, chapter.id);
     close(chapterProgress(chapter.start), 0);
-    assert.ok(chapter.caption && chapter.acceptance && chapter.misconception);
+    assert.ok(chapter.title && chapter.caption);
     end = chapter.end;
   }
   assert.equal(chapterAt(-10), chapters[0]);
@@ -134,6 +135,34 @@ test("timeline covers 80 seconds without gaps and seeks at precise chapter bound
   const before = chapterAt(30);
   chapterAt(75);
   assert.equal(chapterAt(30), before);
+});
+// Each key below is read by the viewer (see docs/architecture.md, "Chapter
+// data"). Adding a field requires a reader and an update here, so tour data
+// the viewer ignores cannot silently describe the tour.
+test("chapters carry exactly the fields the viewer reads", () => {
+  assert.deepEqual(Object.keys(chapterData).sort(), [
+    "chapters",
+    "schema_version",
+  ]);
+  const keys = [
+    "cameraAnchor",
+    "caption",
+    "duration",
+    "end",
+    "id",
+    "selection",
+    "start",
+    "title",
+    "view",
+  ];
+  for (const chapter of chapterData.chapters) {
+    assert.deepEqual(Object.keys(chapter).sort(), keys, chapter.id);
+    assert.deepEqual(
+      Object.keys(chapter.selection).sort(),
+      ["group", "layer", "token"],
+      chapter.id,
+    );
+  }
 });
 test("invalid selections fail explicitly and softmax handles large scores", () => {
   for (const args of [
