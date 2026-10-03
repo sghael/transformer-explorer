@@ -88,6 +88,7 @@ try {
         quaternion: root.camera.quaternion.toArray(),
         target: window.__explorerScene.camera.target,
         phase: window.__explorerScene.navigationPhase,
+        view: window.__explorerScene.selected.view,
         contextMode: window.__explorerScene.contextMode,
         nodes,
         opacity,
@@ -127,14 +128,17 @@ try {
       to = journey[i],
       id = `${from}-${to}`;
     console.log("START " + id);
-    await page.evaluate(() => {
+    await page.evaluate((to) => {
       const initial = window.__flightSnapshot();
       window.__flightInitial = initial;
       window.__flightFrames = [];
       window.__flightDone = false;
       const began = performance.now();
       let active = false,
-        settledAt = null;
+        settledAt = null,
+        previous = null,
+        flightTime = 0,
+        unstartedFrames = 0;
       const tracked = [
         "focus",
         "representative_layer",
@@ -150,10 +154,16 @@ try {
         "cache_k_2",
       ];
       const tick = (now) => {
+        // The scene advances a flight by each frame's duration capped at 50 ms,
+        // so a slow renderer stretches it in wall time. Measure the window the
+        // same way, from frame timestamps rather than the scene's own clock.
+        if (previous !== null) flightTime += Math.min(now - previous, 50);
+        previous = now;
         const sample = window.__flightSnapshot();
         if (sample.phase !== "settled") active = true;
         if (active && sample.phase === "settled" && settledAt === null)
           settledAt = now;
+        if (!active && sample.view === to) unstartedFrames++;
         let maxMatrixDelta = 0,
           changedCount = 0,
           visibilityChanges = 0;
@@ -181,6 +191,7 @@ try {
         );
         window.__flightFrames.push({
           elapsed: now - began,
+          flightTime,
           camera: sample.camera,
           quaternion: sample.quaternion,
           target: sample.target,
@@ -193,13 +204,11 @@ try {
           visibilityChanges,
           changed,
         });
-        // The flight clock advances at most 0.05 s per rendered frame, so the
-        // longest plan (under 5 s) needs about 100 frames however slow they are.
-        // Allow 400 frames; the wall-clock limit only guards a stalled renderer.
+        // A flight starts within a frame or two of rendering its request.
         if (
           (settledAt !== null && now - settledAt > 200) ||
-          window.__flightFrames.length > 400 ||
-          now - began > 30000
+          flightTime > 7000 ||
+          unstartedFrames > 30
         ) {
           window.__flightDone = true;
           return;
@@ -207,14 +216,17 @@ try {
         requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);
-    });
+    }, to);
     await page.getByRole("button", { name: names[to], exact: true }).click();
     await page.getByLabel("Surroundings", { exact: true }).selectOption("full");
     await page.waitForTimeout(650);
     await page
       .locator("canvas")
       .screenshot({ path: path.join(output, `${id}-flight.png`) });
-    await page.waitForFunction(() => window.__flightDone);
+    // Only a hang guard; the recording itself ends on the capped flight time.
+    await page.waitForFunction(() => window.__flightDone, undefined, {
+      timeout: 60000,
+    });
     await page
       .locator("canvas")
       .screenshot({ path: path.join(output, `${id}-arrival.png`) });
@@ -242,7 +254,11 @@ try {
           .every((f) => f.visibilityChanges === 0),
       { maximum: Math.max(...frames.map((f) => f.visibilityChanges)) },
     );
-    check(id + ": arrived", final.phase === "settled", { duration });
+    check(
+      id + ": arrived",
+      frames.some((f) => f.phase !== "settled") && final.phase === "settled",
+      { duration, flightTime: final.flightTime },
+    );
     if (
       (from === "layer" && to === "attention") ||
       (from === "attention" && to === "matrix") ||

@@ -226,28 +226,33 @@ const surfacePoint = async (id) =>
 const settle = async (target = page) => {
   // Wait for the scene's navigation contract, then require the live camera to
   // remain converged. This also covers restored poses and paused orbit damping.
-  await target.waitForFunction(
-    () => window.__explorerScene?.navigationPhase === "settled",
-    undefined,
-    { timeout: 8000 },
-  );
+  // Both advance per rendered frame: a flight by at most 50 ms of its own
+  // clock, and released orbit damping by 5% of what remains. Bound the wait in
+  // frames so a slow renderer is not mistaken for a camera that never settles,
+  // and fail separately when frames stop rendering. At 60 Hz the longest flight
+  // takes about 290 frames and a released drag's damping about 200.
   await target.evaluate(
     () =>
       new Promise((resolve, reject) => {
         let frame;
+        let frames = 0;
+        let stall;
         let previous = null;
         let stableSince = null;
-        // Orbit damping decays per rendered frame, not per second, so allow a
-        // frame budget; the wall-clock limit only guards a stalled renderer.
-        let frames = 0;
-        const fail = () => {
+        const fail = (message) => {
           cancelAnimationFrame(frame);
-          clearTimeout(timeout);
-          reject(new Error("Camera did not converge after navigation settled"));
+          clearTimeout(stall);
+          reject(new Error(message));
         };
-        const timeout = setTimeout(fail, 60000);
+        const watch = () => {
+          clearTimeout(stall);
+          stall = setTimeout(
+            () => fail("No frame rendered for 8 seconds while settling"),
+            8000,
+          );
+        };
         const observe = (now) => {
-          if (++frames > 900) return fail();
+          watch();
           const current = window.__explorerScene;
           const pose = window.__explorer?.camera;
           const coordinates = pose ? [...pose.position, ...pose.target] : null;
@@ -268,10 +273,17 @@ const settle = async (target = page) => {
           stableSince = stable ? (stableSince ?? now) : null;
           previous = coordinates;
           if (stableSince !== null && now - stableSince >= 180) {
-            clearTimeout(timeout);
+            clearTimeout(stall);
             resolve();
-          } else frame = requestAnimationFrame(observe);
+          } else if (++frames >= 1200)
+            fail(
+              current?.navigationPhase === "settled"
+                ? "Camera did not converge within 1200 frames after navigation settled"
+                : "Navigation did not settle within 1200 frames",
+            );
+          else frame = requestAnimationFrame(observe);
         };
+        watch();
         frame = requestAnimationFrame(observe);
       }),
   );
