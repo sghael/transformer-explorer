@@ -313,6 +313,36 @@ The browser-checks failure is "Keyboard controls select layers and retain focus"
 
 Remaining defects: the identical `settle` helpers in deep-checks, explainer-checks, navigation-checks and review-checks keep their 8-second wall-clock limits. None of their checks waits on orbit damping, but the longest planned flight, 4.75 s, exceeds 8 s once frames take longer than about 84 ms. flight-checks still waits a fixed 4.5 s before its router geometry checks, which do not depend on the camera, and navigation-checks reads orbit movement 150 ms after a drag. Model: Claude Opus 5.5; the reasoning-effort setting was not exposed in-session. Next bounded task: make the keyboard layer-selection check pass on macOS.
 
+## Fix: keyboard select check follows the platform
+
+"Keyboard controls select layers and retain focus" focused the Layer select at First, pressed ArrowDown and then Enter, and expected Middle (layer 15). On macOS the layer stayed 0. Chromium handles keys on a closed native select differently by platform, and the check assumed the Linux behavior. A probe recorded the select's value, `:open` state, focus, and key, input and change events after each key, from a fresh page each time. Both platforms used Playwright 1.55.1's Chromium 140.0.7339.186 in its default headless mode; Linux ran in the official Playwright 1.55.1 container image (arm64) against the same preview.
+
+- Linux: ArrowDown, ArrowRight and End change the closed select and fire input and change. Enter and Space open the in-page popup, which Escape closes. In the old check, ArrowDown chose the layer; Enter only opened the popup, which the check's cleanup closed with Escape.
+- macOS: ArrowDown and Space open the select's popup, the native macOS menu, without changing the value. Headless Chromium cannot operate that menu. Later ArrowDown, Enter and Escape reach the select but change nothing, and the popup stays open until the select loses focus. ArrowRight, End and PageDown do nothing. In Playwright's full-Chromium headless mode, ArrowDown neither opens a menu nor changes the value. Typing a letter changes the closed select in both modes: "m" selects Middle and fires input and change, with focus kept and no popup open.
+
+The viewer has no keyboard defect here. Both selects are native elements whose `onChange` applies the value, and the viewer never moves focus. In headed Chrome, a macOS keyboard user opens the native menu with ArrowDown or Space, moves with the arrow keys and commits with Return. That path was not exercised: headless Chromium cannot drive the menu, and operating-system key events were not sent on a shared host.
+
+The check now presses ArrowDown on Linux and Windows. On macOS it types the first letter of the next option's label, which selects that option by type-ahead. Each step first waits for its starting value, because `window.__explorer` updates after React commits and a stale read could already show the expected value. Focus is asserted after `settle()`, once any navigation the change starts has finished; the old check read focus immediately after the key. Enter and the Escape that closed its popup are gone. The KV group step follows the same sequence and now also requires focus.
+
+Defective viewer builds, served separately and not committed, show what the check catches:
+
+| Viewer | Old check, Linux | New check, Linux and macOS |
+| --- | --- | --- |
+| Unmodified | passes | passes |
+| Layer select keyed by layer, so React recreates it on each change | fails: focus | fails: focus |
+| Layer select cancels keydown, as a global shortcut handler might | fails: layer stays 0 | fails: layer stays 0 |
+| Focus dropped when a camera flight arrives | passes | fails: focus |
+
+The old check fails on the unmodified viewer on macOS. The last row is new coverage: the old check read focus before the flight started by the layer change had arrived.
+
+Lowercase type-ahead behaved differently in the Linux container: "m" left the value unchanged, while "M" selected Middle. With `LANG=en_US.UTF-8` and an en-US browser context, "m" works there as well, so the difference comes from the container's default locale rather than from platform select behavior. The check uses ArrowDown on Linux and does not depend on it.
+
+Build **20261002T212416Z-c53331** retains **transformer-edbc6ca676ec.glb**, **461,756 bytes**, from a clean 12.7-second build with the PyPI bpy 4.5.13 module through `scripts/blender_bpy.py`. It was built before #17 merged; #17 and this change alter only harnesses and docs, so its viewer and asset sources match this branch. On the rebased branch the full `browser-checks.mjs` passes **21/21** on macOS arm64 and **21/21** in the Linux container, each with 35 screenshots and no browser errors. The keyboard check takes about 4.6 s, mostly settling the flight its layer change starts. The defective-build table was rerun on the rebased branch with the same results. Windows was not run. `npm --prefix web test` passes **26/26**; lint, format:check and both full-history Gitleaks scans pass. The deep, flight, navigation, review and explainer suites were not rerun; they do not use this check's code. Inspected capture: browser/overview-second-oblique.png.
+
+Before the rebase, one macOS full run passed 20/21. "Model and WebGL failures replace only the 3D view" did not find the "The model could not load" alert within the default 5-second assertion timeout, and the check failed 1 of 3 runs alone. Its code and the viewer are unchanged from main. With no other page open, the alert appeared 0.9–1.5 s after navigation in 8 of 8 loads. With the suite's main page rendering in the same browser, the new page requested the model 1.7–5.4 s after navigation, and the alert followed about 0.7 s after the 404; 3 of 8 alerts came later than 5 s. The failure path works, but the check's window, counted from navigation, is too short when software rendering competes for the browser.
+
+Remaining defects: that window; the 8-second wall-clock `settle` limits in deep-checks, explainer-checks, navigation-checks and review-checks; flight-checks' fixed 4.5 s wait and navigation-checks' 150 ms orbit read, all recorded above. Model: Claude Opus 5.5; the reasoning-effort setting was not exposed in-session. Next bounded task: make the model-failure check time its alert from the failed model request instead of from navigation.
+
 ## Follow-up: honest chapter data and bundle split
 
 This branch also rewrote the three timing-dependent checks. #17, above, landed a more thorough version of the same fix first, so the merge keeps #17's check scripts and drops this branch's.
