@@ -25,6 +25,8 @@ export const tokens = [
   "the",
   "world",
 ];
+// Every field is read by the viewer; data.test.ts pins this key set so unread
+// tour data cannot return. See docs/architecture.md, "Chapter data".
 export interface Chapter {
   id: string;
   title: string;
@@ -34,22 +36,12 @@ export interface Chapter {
   view: View;
   // Names the view's camera in shared/layout.json, which holds its framing.
   cameraAnchor: string;
-  detailLevel: number;
   // The tour derives its expert from routing; see routedExpert.
   selection: { layer: number; group: number; token: number };
-  locator: boolean;
-  emphasis: string[];
-  dimming: string[];
-  visibility: string[];
-  pose: { spacing: number; expanded: boolean; expertExpanded: boolean };
-  animation: { kind: string; seed: number; cycles: number };
   caption: string;
-  explanationKey: string;
-  misconception: string;
-  acceptance: string;
 }
-if (chapterData.schema_version !== 2)
-  throw Error("chapters.json must use schema version 2");
+if (chapterData.schema_version !== 3)
+  throw Error("chapters.json must use schema version 3");
 export const chapters = chapterData.chapters as Chapter[];
 export const tourDuration = chapters.at(-1)!.end;
 /** Absolute tour time at a fraction of a chapter, so choreography follows chapters.json. */

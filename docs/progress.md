@@ -342,3 +342,21 @@ Build **20261002T212416Z-c53331** retains **transformer-edbc6ca676ec.glb**, **46
 Before the rebase, one macOS full run passed 20/21. "Model and WebGL failures replace only the 3D view" did not find the "The model could not load" alert within the default 5-second assertion timeout, and the check failed 1 of 3 runs alone. Its code and the viewer are unchanged from main. With no other page open, the alert appeared 0.9–1.5 s after navigation in 8 of 8 loads. With the suite's main page rendering in the same browser, the new page requested the model 1.7–5.4 s after navigation, and the alert followed about 0.7 s after the 404; 3 of 8 alerts came later than 5 s. The failure path works, but the check's window, counted from navigation, is too short when software rendering competes for the browser.
 
 Remaining defects: that window; the 8-second wall-clock `settle` limits in deep-checks, explainer-checks, navigation-checks and review-checks; flight-checks' fixed 4.5 s wait and navigation-checks' 150 ms orbit read, all recorded above. Model: Claude Opus 5.5; the reasoning-effort setting was not exposed in-session. Next bounded task: make the model-failure check time its alert from the failed model request instead of from navigation.
+
+## Follow-up: honest chapter data and bundle split
+
+This branch also rewrote the three timing-dependent checks. #17, above, landed a more thorough version of the same fix first, so the merge keeps #17's check scripts and drops this branch's.
+
+Chapter data now carries only fields the viewer reads (chapters.json schema 3): `id`, `title`, `caption`, `start`, `end`, `duration`, `view`, `selection` and `cameraAnchor`. Removed:
+- Per chapter: `detailLevel`, `locator`, `emphasis`, `dimming`, `visibility`, `pose`, `animation` and `explanationKey`.
+- Per chapter: `misconception` and `acceptance`. Only a test checked them; the storyboard keeps them for every stop.
+- At the top level: `duration` and `illustrative`.
+
+A unit test pins the key set, and architecture.md has a new Chapter data section. **README.md's chapter requirement is now partly unmet:** visible detail level, emphasis/dimming sets, animation parameters and explanation key are no longer chapter data. The viewer derives dimming from the view and explanations from the selection. Restoring them requires code that reads them.
+
+Performance:
+- **Bundle split:** `web/vite.config.ts` splits the bundle into three, r3f, react and vendor chunks. The single 1,238 kB script (350 kB gzip) becomes 76 kB of app code plus vendor chunks; the largest, three, is 704 kB.
+- **Disposal:** Scene.tsx disposes the cloned scene's materials, and the geometry copies it made, when the scene is replaced or unmounted. Shared GLB geometry is left alone.
+- **Per-frame re-render:** not fixed. Memoizing the explanation panel saved about 0.1 ms per render, inside the measurement noise, and broke 3 review checks through stale handler values, so it was dropped. Scene needs tour time every frame in any case. Moving the tour clock into a store that only Scene and the playback controls subscribe to is the remaining option.
+
+On the combined build **20261002T213733Z-7b0b28** (asset transformer-edbc6ca676ec.glb, unchanged), run one at a time: review-checks **16/16**, deep-checks **11/11**, flight-checks (60 checks pass), navigation-checks, browser-checks **21/21**, explainer-checks **7/7**, semantic-check and inspect all pass. `camera-poses.mjs` matches the #15 baseline on all 526 poses, with a largest difference of 1.8e-15. `npm --prefix web test` passes 27/27; lint and formatting pass. After merging #17, its check scripts against this branch's viewer pass on build **20261003T194239Z-a3a901**: deep-checks **11/11**, flight-checks (60 checks pass) and browser-checks **21/21**. Decision (human, 2026-10-03): amend the README rather than build per-chapter detail, emphasis, animation and explanation settings. README.md now requires only fields the viewer reads; per-chapter settings can return later with the code that reads them. Next bounded task: continue on the human's own machine, run the browser suites on hardware rendering, and record the first hardware performance numbers; then move the tour clock out of App so a tour frame no longer re-renders the whole app.

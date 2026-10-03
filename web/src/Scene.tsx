@@ -608,6 +608,23 @@ function Model(p: Props) {
     });
     return s;
   }, [original]);
+  useEffect(
+    () => () => {
+      // Every mesh material in the clone is a per-instance copy, so it is safe
+      // to dispose. Geometry is shared with the cached GLB unless it was
+      // replaced locally (the score-plane UV copy), so only those are freed.
+      const shared = new Set<THREE.BufferGeometry>();
+      original.traverse((o) => {
+        if (o instanceof THREE.Mesh) shared.add(o.geometry);
+      });
+      scene.traverse((o) => {
+        if (!(o instanceof THREE.Mesh)) return;
+        (o.material as THREE.Material).dispose();
+        if (!shared.has(o.geometry)) o.geometry.dispose();
+      });
+    },
+    [original, scene],
+  );
   const controls = useRef<Controls>(null);
   const routes = useRef<THREE.Group>(null);
   const contours = useRef<THREE.Group>(null);

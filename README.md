@@ -124,7 +124,7 @@ Use Vite, React, TypeScript, Three.js, `@react-three/fiber`, and `@react-three/d
 
 **Guided Tour:** play/pause, restart, previous/next chapter, scrubber, speed, and return to Explore. Paused camera movement should remain under the visitor's control. Resume should transition smoothly to the tour camera. Respect reduced-motion settings and provide readable captions.
 
-Represent chapters as data with ID, duration, camera anchor/target, visible detail level, emphasis/dimming sets, animation parameters, caption, and explanation key. Compute scene state from absolute timeline time and a fixed seed so seeking backward works without replaying a chain of side effects. Ensure camera controls and tour playback never compete for ownership.
+Represent chapters as data with ID, timing, view, selection, camera anchor and caption. The camera's position and target belong to the view's camera data, not to the chapter. Visible detail, emphasis and dimming, animation and explanations follow from the chapter's view, selection and absolute time in code. Chapter data carries only fields the viewer reads; add a per-chapter field together with the code that reads it. Compute scene state from absolute timeline time and a fixed seed so seeking backward works without replaying a chain of side effects. Ensure camera controls and tour playback never compete for ownership.
 
 The full storyboard follows overview → tokens → embeddings → stack → expanded layer → RMSNorm → Q/K/V → GQA → RoPE → causal attention → cache → attention residual → second RMSNorm → router → top-2 selection → expert processing → weighted merge → residual output → collapse → remaining layers → final norm → LM head/logits → next-token choice → autoregressive loop → overview.
 
