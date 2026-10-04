@@ -84,15 +84,18 @@ React work during playback, measured with a temporary `Profiler` around the DOM 
 
 Commit counts stay near one per frame because the time readouts and moving markers genuinely change each frame. More frames rendered in the same 3 s after the change, so counts rose slightly. Each commit now renders only those readouts and markers rather than the whole App, its explanation panel and tables, and the scene. The flow's three.js commits also stopped rebuilding line geometry. drei's `Line` rebuilds its geometry and disposes its material whenever it receives a new `points` array, which previously happened for every flow track on every frame.
 
-Bundle (`npm --prefix web run build`, minified / gzip):
+Bundle (`npm --prefix web run build`, minified / gzip). #18 split the single chunk into vendor chunks but still loaded all of them before the page rendered. This change loads the scene lazily, so the explanation UI needs only the app and React chunks:
 
-| Chunk | Before | After |
-| --- | ---: | ---: |
-| index (app) | 1,238.3 / 350.0 kB | 50.3 / 16.2 kB |
-| react (vendor) | — | 189.2 / 59.9 kB |
-| Scene (lazy) | — | 293.6 / 92.8 kB |
-| three (vendor, lazy) | — | 704.3 / 181.5 kB |
+| Chunk | fff1016 | main after #18 | This change |
+| --- | ---: | ---: | ---: |
+| index (app) | 1,238.3 / 350.0 kB | 70.7 / 24.0 kB | 47.5 / 15.7 kB |
+| react | — | 189.2 / 59.9 kB | 190.5 / 60.4 kB |
+| Scene | — | in index | 31.6 / 11.5 kB, lazy |
+| vendor | — | 119.1 / 37.6 kB | 119.1 / 37.6 kB, lazy |
+| r3f | — | 144.8 / 45.3 kB | 144.9 / 45.4 kB, lazy |
+| three | — | 704.3 / 181.5 kB | 704.3 / 181.5 kB, lazy |
+| **Loaded before the UI renders** | **1,238.3 / 350.0 kB** | **1,228.1 / 348.2 kB** | **237.9 / 76.1 kB** |
 
-The page now needs 239.4 kB (76.1 kB gzip) of JavaScript before the explanation UI renders, down from 1,238.3 kB. The scene chunks load in parallel after that. Vite's size warning no longer fires: the limit is 750 kB, because three.js core is a single 704 kB module.
+The lazy chunks load in parallel after the entry. Vite's preload helper, which the entry needs to import the scene, is assigned to the react chunk; left to Rollup it landed in the r3f chunk, and the entry then preloaded every 3D chunk. Vite's size warning does not fire with #18's 800 kB limit.
 
-Equivalence: 60 captures (six views at 1440 × 1100 and 390 × 844, eight tour times at both sizes and with reduced motion, and flow steps in five views) give identical app state, scene report, camera pose and visible text before and after. Their screenshots differ by at most 208 pixels, within the 227-pixel variation between two runs of the unchanged build.
+Equivalence: 60 captures (six views at 1440 × 1100 and 390 × 844, eight tour times at both sizes and with reduced motion, and flow steps in five views) give identical app state, scene report, camera pose and visible text before and after. Their screenshots differ by at most 208 pixels, within the 227-pixel variation between two runs of the unchanged build. After merging #18, build 20261004T003707Z-9ffea0 also matches the fff1016 captures in state, report and text, with at most 146 differing pixels. The frame and commit measurements above predate that merge; #18 changed chapter data, disposal and chunking, not per-frame work.

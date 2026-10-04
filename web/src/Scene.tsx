@@ -638,18 +638,22 @@ function Model(p: Props) {
     });
     return s;
   }, [original]);
-  // Per-object coloring clones each material, and the selected score sheet
-  // receives a cloned geometry with UVs. The loaded asset owns the originals.
-  const clonedGeometries = useRef(new Set<THREE.BufferGeometry>());
   useEffect(
     () => () => {
-      scene.traverse((o) => {
-        if (o instanceof THREE.Mesh) (o.material as THREE.Material).dispose();
+      // Every mesh material in the clone is a per-instance copy, so it is safe
+      // to dispose. Geometry is shared with the cached GLB unless it was
+      // replaced locally (the score-plane UV copy), so only those are freed.
+      const shared = new Set<THREE.BufferGeometry>();
+      original.traverse((o) => {
+        if (o instanceof THREE.Mesh) shared.add(o.geometry);
       });
-      clonedGeometries.current.forEach((geometry) => geometry.dispose());
-      clonedGeometries.current.clear();
+      scene.traverse((o) => {
+        if (!(o instanceof THREE.Mesh)) return;
+        (o.material as THREE.Material).dispose();
+        if (!shared.has(o.geometry)) o.geometry.dispose();
+      });
     },
-    [scene],
+    [original, scene],
   );
   const flowActive = useClock(p.flowClock, (t) => t > 0);
   const flowIdle = !p.flowPlaying && !flowActive;
@@ -851,7 +855,6 @@ function Model(p: Props) {
     const score = nodes.get(`score_${p.state.group}`) as THREE.Mesh;
     if (!score.geometry.getAttribute("uv")) {
       score.geometry = score.geometry.clone();
-      clonedGeometries.current.add(score.geometry);
       const positions = score.geometry.getAttribute("position");
       const uv = new Float32Array(positions.count * 2);
       for (let i = 0; i < positions.count; i++) {

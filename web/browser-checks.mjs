@@ -311,6 +311,17 @@ const seek = async (value) => {
   await expect.poll(async () => (await snapshot(page)).time).toBe(value);
   await settle();
 };
+// Chromium's keys for a closed native select follow the platform. On Linux and
+// Windows, ArrowDown selects the next option. On macOS, ArrowDown and Space open
+// the native menu instead, and headless Chromium cannot operate that menu: later
+// keys reach the select without changing it. There, typing a letter selects the
+// next option whose label starts with it. Both paths fire input and change.
+const nextOptionKey = (select) =>
+  process.platform === "darwin"
+    ? select.evaluate((element) =>
+        element.options[element.selectedIndex + 1].label[0].toLowerCase(),
+      )
+    : "ArrowDown";
 const identity = (state) => ({
   layer: state.layer,
   group: state.group,
@@ -792,21 +803,26 @@ try {
     return { before, after };
   });
   await check("Keyboard controls select layers and retain focus", async () => {
-    const control = page.getByLabel("Layer", { exact: true });
-    await control.selectOption("0");
-    await control.focus();
-    await page.keyboard.press("ArrowDown");
-    await page.keyboard.press("Enter");
-    await expect(control).toBeFocused();
-    expect((await snapshot(page)).state.layer).toBe(15);
-    await page.getByLabel("KV group", { exact: true }).selectOption("5");
-    await page.getByLabel("KV group", { exact: true }).focus();
+    const step = async (label, field, from, to) => {
+      const control = page.getByLabel(label, { exact: true });
+      await control.selectOption(String(from));
+      // Diagnostics update after React commits; start from a known value.
+      await expect
+        .poll(async () => (await snapshot(page)).state[field])
+        .toBe(from);
+      await control.focus();
+      await page.keyboard.press(await nextOptionKey(control));
+      await expect
+        .poll(async () => (await snapshot(page)).state[field])
+        .toBe(to);
+      // Require focus once any navigation the change starts has settled.
+      await settle();
+      await expect(control).toBeFocused();
+    };
     try {
-      await page.keyboard.press("ArrowDown");
-      await page.keyboard.press("Enter");
-      await expect.poll(async () => (await snapshot(page)).state.group).toBe(6);
+      await step("Layer", "layer", 0, 15);
+      await step("KV group", "group", 5, 6);
     } finally {
-      await page.keyboard.press("Escape");
       await page.keyboard.press("Tab");
     }
   });
