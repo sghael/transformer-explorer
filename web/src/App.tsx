@@ -1,17 +1,18 @@
 import {
+  lazy,
+  Suspense,
+  useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   useSyncExternalStore,
 } from "react";
-import Scene, {
-  type CameraPose,
-  type Selection,
-  type ContextMode,
-  type ReadyInfo,
-} from "./Scene";
-import { flowDescription } from "./Flow";
+import type { CameraPose, Selection, ContextMode, ReadyInfo } from "./Scene";
+import type { Object3D } from "three";
+import { createClock, useClock, type Clock } from "./clock";
+import { flowDescription } from "./flowDescription";
 import { representativeLayers, representativeLayer } from "./layout";
 import RmsNormPanel from "./RmsNormPanel";
 import LoadBoundary from "./LoadBoundary";
@@ -31,6 +32,9 @@ import {
   tourTime,
   type View,
 } from "./data";
+// three.js, React Three Fiber and drei load in a separate chunk, so the
+// explanations render first. A failed chunk load reaches the scene boundary.
+const Scene = lazy(() => import("./Scene"));
 const initial: Selection = {
   layer: 15,
   group: 2,
@@ -183,14 +187,54 @@ function usePrefersReducedMotion() {
     () => matchMedia(reducedMotionQuery).matches,
   );
 }
+// Tour and flow time change every frame during playback; only these readouts
+// follow them, not the whole App.
+function TourPosition({
+  clock,
+  seek,
+}: {
+  clock: Clock;
+  seek: (t: number) => void;
+}) {
+  const time = useClock(clock, (t) => t);
+  return (
+    <>
+      <input
+        aria-label="Tour position"
+        type="range"
+        min="0"
+        max={tourDuration}
+        step=".1"
+        value={time}
+        onChange={(e) => seek(+e.target.value)}
+      />
+      <output>
+        {time.toFixed(1)} / {tourDuration} s
+      </output>
+    </>
+  );
+}
+function FlowPosition({ clock }: { clock: Clock }) {
+  const time = useClock(clock, (t) => t.toFixed(1));
+  return <output>{time} / 12 s</output>;
+}
+function FlowDescription({ clock, view }: { clock: Clock; view: View }) {
+  const description = useClock(clock, (t) => flowDescription(view, t));
+  return (
+    <p>
+      {description} . This repeating demonstration is separate from model
+      inference and the guided tour.
+    </p>
+  );
+}
 export default function App() {
   const [state, setState] = useState<Selection>(initial);
   const [cameraRevision, setCameraRevision] = useState(0);
   const [lowQuality, setLowQuality] = useState(false);
   const [contextMode, setContextMode] = useState<ContextMode>("muted");
-  const [time, setTime] = useState(0);
+  const [tourClock] = useState(() => createClock());
   const [playing, setPlaying] = useState(false);
-  const [flowTime, setFlowTime] = useState(0);
+  const [flowClock] = useState(() => createClock());
   const [flowPlaying, setFlowPlaying] = useState(false);
   const [inspectedComponent, setInspectedComponent] = useState<
     "norm1" | "norm2" | "final_norm" | null
@@ -219,13 +263,20 @@ export default function App() {
   const chosen = data.candidates.reduce((best, c) =>
     c.logit > best.logit ? c : best,
   );
-  const chapter = chapterAt(time);
+  const chapterId = useClock(tourClock, (t) => chapterAt(t).id);
+  const chapter = chapters.find((c) => c.id === chapterId)!;
+  const tourDecode = useClock(
+    tourClock,
+    (t) =>
+      (t >= tourTime("cache", 1 / 2) && t < tourTime("cache", 1)) ||
+      t >= tourTime("decode"),
+  );
+  const flowActive = useClock(flowClock, (t) => t > 0);
+  const flowDecode = useClock(flowClock, (t) => t >= 6);
   const showingDecode =
-    state.view === "cache" && (flowPlaying || flowTime > 0)
-      ? flowTime >= 6
-      : (decode ??
-        ((time >= tourTime("cache", 1 / 2) && time < tourTime("cache", 1)) ||
-          time >= tourTime("decode")));
+    state.view === "cache" && (flowPlaying || flowActive)
+      ? flowDecode
+      : (decode ?? tourDecode);
   const shape = explainShape(state, showingDecode);
   const contextForView = (view: View): ContextMode =>
     ["attention", "cache", "matrix"].includes(view) ? "isolated" : "muted";
@@ -234,7 +285,7 @@ export default function App() {
       setContextMode(contextForView(patch.view));
     setPlaying(false);
     setFlowPlaying(false);
-    setFlowTime(0);
+    flowClock.set(0);
     if (patch.view) setInspectedComponent(null);
     if (patch.view === "matrix" && state.view !== "matrix")
       setMatrixOrigin(state.view);
@@ -267,7 +318,7 @@ export default function App() {
   };
   const applyChapter = (t: number) => {
     setFlowPlaying(false);
-    setFlowTime(0);
+    flowClock.set(0);
     setInspectedComponent(null);
     const c = chapterAt(t);
     if (c.view !== state.view || inspectedComponent)
@@ -291,12 +342,12 @@ export default function App() {
     const tick = (now: number) => {
       const elapsed = (now - previous) / 1000;
       previous = now;
-      setFlowTime((value) => (value + elapsed) % 12);
+      flowClock.set((flowClock.get() + elapsed) % 12);
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [flowPlaying]);
+  }, [flowPlaying, flowClock]);
   useEffect(() => {
     if (!playing) return;
     let frame: number;
@@ -304,32 +355,68 @@ export default function App() {
     const tick = (now: number) => {
       const elapsed = ((now - last) / 1000) * speed;
       last = now;
-      setTime((t) => {
-        const next = Math.min(tourDuration, t + elapsed);
-        if (next === tourDuration) setPlaying(false);
-        return next;
-      });
+      const next = Math.min(tourDuration, tourClock.get() + elapsed);
+      tourClock.set(next);
+      if (next === tourDuration) setPlaying(false);
       frame = requestAnimationFrame(tick);
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [playing, speed]);
+  }, [playing, speed, tourClock]);
   useEffect(() => {
-    if (playing) applyChapter(time);
+    if (playing) applyChapter(tourClock.get());
     // eslint-disable-next-line react-hooks/exhaustive-deps -- apply a chapter when it changes, not on every tour frame
   }, [chapter.id, playing]);
+  // The memoized scene receives stable callbacks that use the latest handlers.
+  const handlers = useRef({ change, inspectNorm });
+  useLayoutEffect(() => {
+    handlers.current = { change, inspectNorm };
+  });
+  const onView = useCallback((view: View) => {
+    setCameraRevision((r) => r + 1);
+    handlers.current.change({ view });
+  }, []);
+  const onPick = useCallback((id: string, d: Object3D["userData"]) => {
+    const patch: Partial<Selection> = {};
+    if (Number.isInteger(d.layer) && d.layer >= 0 && d.layer < 32)
+      patch.layer = d.layer;
+    if (d.group !== undefined) patch.group = d.group;
+    if (d.expert !== undefined) patch.expert = d.expert;
+    patch.view =
+      id === "input" || id === "embedding"
+        ? "input"
+        : ["final_norm", "lm_head", "output"].includes(id)
+          ? "output"
+          : id.startsWith("cache_")
+            ? "cache"
+            : d.expert !== undefined
+              ? "expert"
+              : id.includes("router")
+                ? "router"
+                : d.group !== undefined || id.includes("attention")
+                  ? "attention"
+                  : "layer";
+    handlers.current.change(patch);
+    if (id === "norm1" || id === "norm2" || id === "final_norm")
+      handlers.current.inspectNorm(id);
+    else setInspectedComponent(null);
+  }, []);
   const seek = (t: number) => {
     setCameraRevision((r) => r + 1);
-    setTime(t);
+    tourClock.set(t);
     applyChapter(t);
   };
   useEffect(() => {
     if (!diagnosticsEnabled) return;
     window.__explorer = {
       state,
-      time,
+      get time() {
+        return tourClock.get();
+      },
       playing,
-      flowTime,
+      get flowTime() {
+        return flowClock.get();
+      },
       flowPlaying,
       contextMode,
       inspectedComponent,
@@ -341,9 +428,9 @@ export default function App() {
     };
   }, [
     state,
-    time,
+    tourClock,
     playing,
-    flowTime,
+    flowClock,
     flowPlaying,
     contextMode,
     inspectedComponent,
@@ -357,9 +444,9 @@ export default function App() {
         seed: 1729,
         layoutVersion: 2,
         state,
-        time,
+        time: tourClock.get(),
         decode: showingDecode,
-        flowTime,
+        flowTime: flowClock.get(),
         flowPlaying,
         inspectedComponent,
         inspectionDepth,
@@ -454,7 +541,7 @@ export default function App() {
       setContextMode(restoredContextMode);
       setPlaying(false);
       setFlowPlaying(false);
-      setFlowTime(value.flowTime);
+      flowClock.set(value.flowTime);
       setInspectedComponent(value.inspectedComponent);
       setInspectionDepth(value.inspectionDepth);
       setInspectionChannel(value.inspectionChannel);
@@ -467,7 +554,7 @@ export default function App() {
         layer: representativeLayer(value.state.layer),
         spacing: 1,
       });
-      setTime(value.time);
+      tourClock.set(value.time);
       setRestorePose(value.layoutVersion === 2 ? value.camera : null);
       setCameraRevision((revision) => revision + 1);
     } catch (e) {
@@ -491,7 +578,7 @@ export default function App() {
           onClick={() => {
             setDecode(null);
             setFlowPlaying(false);
-            setFlowTime(0);
+            flowClock.set(0);
             setInspectedComponent(null);
             setInspectionDepth("operation");
             setInspectionChannel(0);
@@ -501,7 +588,7 @@ export default function App() {
             setRestorePose(null);
             setMatrixOrigin("attention");
             setState(initial);
-            setTime(0);
+            tourClock.set(0);
             setPlaying(false);
             setCameraRevision((r) => r + 1);
           }}
@@ -546,54 +633,27 @@ export default function App() {
           </div>
           <div className="canvas">
             <LoadBoundary scope="scene" onError={() => setSceneFailed(true)}>
-              <Scene
-                onView={(view) => {
-                  setCameraRevision((r) => r + 1);
-                  change({ view });
-                }}
-                state={state}
-                lowQuality={lowQuality}
-                contextMode={contextMode}
-                normFocus={inspectedComponent}
-                cameraRevision={cameraRevision}
-                // Reduced motion steps through the same states instead of gliding.
-                time={reduced ? Math.floor(time) : time}
-                flowTime={reduced ? Math.floor(flowTime) : flowTime}
-                flowPlaying={flowPlaying}
-                decode={showingDecode}
-                playing={playing}
-                reduced={reduced}
-                top2={data.router.top2}
-                cameraRef={cameraRef}
-                restorePose={restorePose}
-                onReady={setReady}
-                onPick={(id, d) => {
-                  const patch: Partial<Selection> = {};
-                  if (Number.isInteger(d.layer) && d.layer >= 0 && d.layer < 32)
-                    patch.layer = d.layer;
-                  if (d.group !== undefined) patch.group = d.group;
-                  if (d.expert !== undefined) patch.expert = d.expert;
-                  patch.view =
-                    id === "input" || id === "embedding"
-                      ? "input"
-                      : ["final_norm", "lm_head", "output"].includes(id)
-                        ? "output"
-                        : id.startsWith("cache_")
-                          ? "cache"
-                          : d.expert !== undefined
-                            ? "expert"
-                            : id.includes("router")
-                              ? "router"
-                              : d.group !== undefined ||
-                                  id.includes("attention")
-                                ? "attention"
-                                : "layer";
-                  change(patch);
-                  if (id === "norm1" || id === "norm2" || id === "final_norm")
-                    inspectNorm(id);
-                  else setInspectedComponent(null);
-                }}
-              />
+              <Suspense fallback={null}>
+                <Scene
+                  onView={onView}
+                  state={state}
+                  lowQuality={lowQuality}
+                  contextMode={contextMode}
+                  normFocus={inspectedComponent}
+                  cameraRevision={cameraRevision}
+                  tourClock={tourClock}
+                  flowClock={flowClock}
+                  flowPlaying={flowPlaying}
+                  decode={showingDecode}
+                  playing={playing}
+                  reduced={reduced}
+                  top2={data.router.top2}
+                  cameraRef={cameraRef}
+                  restorePose={restorePose}
+                  onReady={setReady}
+                  onPick={onPick}
+                />
+              </Suspense>
               {!ready && (
                 <div className="loading" role="status">
                   Loading the Blender model…
@@ -901,7 +961,7 @@ export default function App() {
                 onClick={() => {
                   setPlaying(false);
                   setFlowPlaying(false);
-                  setFlowTime(0);
+                  flowClock.set(0);
                   setDecode(!showingDecode);
                 }}
               >
@@ -1185,18 +1245,14 @@ export default function App() {
                   onClick={() => {
                     setPlaying(false);
                     setFlowPlaying(false);
-                    setFlowTime((value) => (value + 1) % 12);
+                    flowClock.set((flowClock.get() + 1) % 12);
                   }}
                 >
                   Step flow
                 </button>
-                <output>{flowTime.toFixed(1)} / 12 s</output>
+                <FlowPosition clock={flowClock} />
               </div>
-              <p>
-                {flowDescription(state.view, flowTime)} . This repeating
-                demonstration is separate from model inference and the guided
-                tour.
-              </p>
+              <FlowDescription clock={flowClock} view={state.view} />
             </div>
           )}
           <div className="tour">
@@ -1204,7 +1260,7 @@ export default function App() {
               <button
                 className="primary"
                 onClick={() => {
-                  if (time >= tourDuration) seek(0);
+                  if (tourClock.get() >= tourDuration) seek(0);
                   setPlaying(!playing);
                 }}
               >
@@ -1242,18 +1298,7 @@ export default function App() {
             </div>
             <label className="scrubber">
               Tour position
-              <input
-                aria-label="Tour position"
-                type="range"
-                min="0"
-                max={tourDuration}
-                step=".1"
-                value={time}
-                onChange={(e) => seek(+e.target.value)}
-              />
-              <output>
-                {time.toFixed(1)} / {tourDuration} s
-              </output>
+              <TourPosition clock={tourClock} seek={seek} />
             </label>
             <p className="caption">
               <span className="caption-label">
