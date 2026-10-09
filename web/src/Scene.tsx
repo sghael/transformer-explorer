@@ -1,5 +1,6 @@
 import {
   Suspense,
+  memo,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -8,13 +9,16 @@ import {
 } from "react";
 import {
   Canvas,
+  addEffect,
   events,
+  flushSync,
   useFrame,
   useThree,
   type ThreeEvent,
 } from "@react-three/fiber";
 import { OrbitControls, useGLTF, Line, Html } from "@react-three/drei";
 import { diagnosticsEnabled } from "./diagnostics";
+import { useClock, type Clock } from "./clock";
 import { WebGLUnavailableError } from "./LoadBoundary";
 import * as THREE from "three";
 import type { OrbitControls as Controls } from "three-stdlib";
@@ -58,11 +62,11 @@ type Props = {
   contextMode: ContextMode;
   state: Selection;
   playing: boolean;
-  flowTime: number;
+  flowClock: Clock;
   flowPlaying: boolean;
   reduced: boolean;
   top2: number[];
-  time: number;
+  tourClock: Clock;
   decode: boolean;
   cameraRevision: number;
   lowQuality: boolean;
@@ -254,12 +258,81 @@ function AnnotationLevel({
     </group>
   ) : null;
 }
+// Reduced motion steps through the same states instead of gliding.
+const steppedTime = (reduced: boolean) => (t: number) =>
+  reduced ? Math.floor(t) : t;
+// These markers follow the tour clock. As separate components, only they
+// re-render on a tour frame.
+function TourToken({ p }: { p: Props }) {
+  const time = useClock(p.tourClock, steppedTime(p.reduced));
+  return (
+    <mesh position={tokenPose(time, p.state.spacing, p.state.layer)}>
+      <sphereGeometry args={[0.13, 10, 8]} />
+      <meshBasicMaterial color="#f3c779" />
+    </mesh>
+  );
+}
+function AppendedLabel({ p, token }: { p: Props; token: string }) {
+  const time = useClock(p.tourClock, steppedTime(p.reduced));
+  const position = tokenPose(time, p.state.spacing, p.state.layer);
+  return (
+    <Html
+      position={[position[0], position[1] + 0.7, position[2]]}
+      center
+      style={labelStyle}
+    >
+      Appended chunk “{token}”
+    </Html>
+  );
+}
+function RouterOutputs({ p }: { p: Props }) {
+  const t = useClock(p.tourClock, (time) =>
+    routerOutputProgress(steppedTime(p.reduced)(time)),
+  );
+  return p.top2.map((e, i) => (
+    <mesh
+      key={"output-vector" + e}
+      name={"output-vector" + e}
+      position={pointAlongPath(routerPaths(e).output, t)}
+    >
+      <boxGeometry args={[0.28, 0.28, 0.28]} />
+      <meshBasicMaterial color={i === 0 ? "#f3c779" : "#64cfbf"} />
+    </mesh>
+  ));
+}
+function LayerToken({ p }: { p: Props }) {
+  const time = useClock(p.tourClock, steppedTime(p.reduced));
+  return (
+    <mesh
+      position={[
+        Math.max(
+          -9,
+          Math.min(
+            10,
+            -9 +
+              ((time - tourTime("attention-entry")) /
+                (tourTime("attention-entry", 1) -
+                  tourTime("attention-entry"))) *
+                7,
+          ),
+        ),
+        0.2,
+        0,
+      ]}
+    >
+      <sphereGeometry args={[0.14, 10, 8]} />
+      <meshBasicMaterial color="#f3c779" />
+    </mesh>
+  );
+}
 function Effects({
   p,
   nodes,
+  flowIdle,
 }: {
   p: Props;
   nodes: Map<string, THREE.Object3D>;
+  flowIdle: boolean;
 }) {
   const data = useMemo(
     () => sample(p.state.layer, p.state.group, p.state.token),
@@ -283,7 +356,14 @@ function Effects({
   const chosen = data.candidates.reduce((best, item) =>
     item.logit > best.logit ? item : best,
   );
-  const flowPosition = tokenPose(p.time, p.state.spacing, p.state.layer);
+  const decoding = useClock(
+    p.tourClock,
+    (t) => steppedTime(p.reduced)(t) >= tourTime("decode"),
+  );
+  const feedback = useMemo(
+    () => macroPaths(p.state.spacing).generation_feedback,
+    [p.state.spacing],
+  );
   return (
     <>
       {overview && (
@@ -338,30 +418,11 @@ function Effects({
               : "Next token",
             [0, -1, 0],
           )}
-          {!p.flowPlaying && p.flowTime === 0 && (
-            <mesh position={flowPosition}>
-              <sphereGeometry args={[0.13, 10, 8]} />
-              <meshBasicMaterial color="#f3c779" />
-            </mesh>
-          )}
-          {p.time >= tourTime("decode") && (
+          {flowIdle && <TourToken p={p} />}
+          {decoding && (
             <>
-              <Line
-                points={macroPaths(p.state.spacing).generation_feedback}
-                color="#64cfbf"
-                lineWidth={2}
-              />
-              <Html
-                position={[
-                  flowPosition[0],
-                  flowPosition[1] + 0.7,
-                  flowPosition[2],
-                ]}
-                center
-                style={labelStyle}
-              >
-                Appended chunk “{chosen.token}”
-              </Html>
+              <Line points={feedback} color="#64cfbf" lineWidth={2} />
+              <AppendedLabel p={p} token={chosen.token} />
               <Html
                 position={[0, 0.5, layout.feedback_z]}
                 center
@@ -535,45 +596,8 @@ function Effects({
           )}
         </>
       )}
-      {view === "router" &&
-        !p.flowPlaying &&
-        p.flowTime === 0 &&
-        p.top2.map((e, i) => {
-          const t = routerOutputProgress(p.time);
-          const position = pointAlongPath(routerPaths(e).output, t);
-          return (
-            <mesh
-              key={"output-vector" + e}
-              name={"output-vector" + e}
-              position={position}
-            >
-              <boxGeometry args={[0.28, 0.28, 0.28]} />
-              <meshBasicMaterial color={i === 0 ? "#f3c779" : "#64cfbf"} />
-            </mesh>
-          );
-        })}
-      {view === "layer" && (
-        <mesh
-          position={[
-            Math.max(
-              -9,
-              Math.min(
-                10,
-                -9 +
-                  ((p.time - tourTime("attention-entry")) /
-                    (tourTime("attention-entry", 1) -
-                      tourTime("attention-entry"))) *
-                    7,
-              ),
-            ),
-            0.2,
-            0,
-          ]}
-        >
-          <sphereGeometry args={[0.14, 10, 8]} />
-          <meshBasicMaterial color="#f3c779" />
-        </mesh>
-      )}
+      {view === "router" && flowIdle && <RouterOutputs p={p} />}
+      {view === "layer" && <LayerToken p={p} />}
       {view === "expert" && (
         <>
           {label(
@@ -591,10 +615,16 @@ function Effects({
     </>
   );
 }
+// Commit pending clock-driven updates before each frame renders, so the frame
+// and the scene report show the same tour and flow time.
+function useFlushBeforeFrame() {
+  useEffect(() => addEffect(() => flushSync(() => {})), []);
+}
 function Model(p: Props) {
   const { scene: original } = useGLTF(
     "./models/" + (import.meta.env.VITE_ASSET_NAME || "transformer.glb"),
   );
+  useFlushBeforeFrame();
   const scene = useMemo(() => {
     const s = original.clone(true);
     s.traverse((o) => {
@@ -624,6 +654,17 @@ function Model(p: Props) {
       });
     },
     [original, scene],
+  );
+  const flowActive = useClock(p.flowClock, (t) => t > 0);
+  const flowIdle = !p.flowPlaying && !flowActive;
+  const routerLines = useMemo(
+    () =>
+      p.top2.map((expert) =>
+        [routerPaths(expert).input, routerPaths(expert).output].flatMap(
+          (points) => points.slice(1).flatMap((end, i) => [points[i], end]),
+        ),
+      ),
+    [p.top2],
   );
   const controls = useRef<Controls>(null);
   const routes = useRef<THREE.Group>(null);
@@ -1164,6 +1205,7 @@ function Model(p: Props) {
         "expert_detail",
       ];
       const rect = gl.domElement.getBoundingClientRect();
+      const time = steppedTime(p.reduced)(p.tourClock.get());
       window.__explorerScene = {
         selected: { ...p.state },
         contextMode: p.contextMode,
@@ -1173,7 +1215,7 @@ function Model(p: Props) {
         navigationElapsed: navigation.current?.elapsed ?? 0,
         expandedCount: nodes.get("focus")?.visible ? 1 : 0,
         decode: p.decode,
-        flowTime: p.flowTime,
+        flowTime: steppedTime(p.reduced)(p.flowClock.get()),
         flowPlaying: p.flowPlaying,
         flowPackets: renderScene.children.flatMap(function collect(o): {
           kind: string;
@@ -1193,7 +1235,7 @@ function Model(p: Props) {
             ...o.children.flatMap(collect),
           ];
         }),
-        time: p.time,
+        time,
         routeExperts: p.top2,
         routerPaths: p.top2.map((expert) => {
           const paths = routerPaths(expert);
@@ -1203,7 +1245,7 @@ function Model(p: Props) {
             points: [...paths.input, ...paths.output],
           };
         }),
-        routerOutputProgress: routerOutputProgress(p.time),
+        routerOutputProgress: routerOutputProgress(time),
         lastPick: lastPick.current,
         routerOutputPositions:
           p.state.view === "router"
@@ -1217,8 +1259,8 @@ function Model(p: Props) {
             : [],
         routeWeights: values.router.weights,
         attentionRow: values.attention[p.state.token],
-        tokenPosition: tokenPose(p.time, p.state.spacing, p.state.layer),
-        generationNewToken: p.time >= tourTime("decode"),
+        tokenPosition: tokenPose(time, p.state.spacing, p.state.layer),
+        generationNewToken: time >= tourTime("decode"),
         chosenChunk: values.candidates.reduce((best, item) =>
           item.logit > best.logit ? item : best,
         ).token,
@@ -1276,7 +1318,7 @@ function Model(p: Props) {
           raycast={() => {}}
         />
       </group>
-      {!p.normFocus && (p.flowPlaying || p.flowTime > 0) && (
+      {!p.normFocus && !flowIdle && (
         <group
           position={
             ["overview", "input", "output"].includes(p.state.view)
@@ -1291,7 +1333,8 @@ function Model(p: Props) {
         >
           <Flow
             view={p.state.view}
-            time={p.flowTime}
+            clock={p.flowClock}
+            reduced={p.reduced}
             group={p.state.group}
             token={p.state.token}
             spacing={p.state.spacing}
@@ -1356,6 +1399,7 @@ function Model(p: Props) {
                 },
               }}
               nodes={nodes}
+              flowIdle={flowIdle}
             />
           </group>
         </AnnotationLevel>
@@ -1391,13 +1435,9 @@ function Model(p: Props) {
             far={far}
           >
             <Effects
-              p={{
-                ...p,
-                flowPlaying: p.flowPlaying && p.state.view === view,
-                flowTime: p.state.view === view ? p.flowTime : 0,
-                state: { ...p.state, view },
-              }}
+              p={{ ...p, state: { ...p.state, view } }}
               nodes={nodes}
+              flowIdle={flowIdle}
             />
           </AnnotationLevel>
         ))}
@@ -1411,12 +1451,7 @@ function Model(p: Props) {
             key={expert}
             name={`router-path-${expert}`}
             segments
-            points={[
-              routerPaths(expert).input,
-              routerPaths(expert).output,
-            ].flatMap((points) =>
-              points.slice(1).flatMap((end, i) => [points[i], end]),
-            )}
+            points={routerLines[i]}
             color={i ? "#69bfb3" : "#d3b77b"}
             lineWidth={1.3}
           />
@@ -1458,7 +1493,8 @@ function webglAvailable() {
     return false;
   }
 }
-export default function Scene(p: Props) {
+// The scene re-renders for selection and playback changes, not tour frames.
+export default memo(function Scene(p: Props) {
   // React Three Fiber creates its renderer asynchronously and would leave the
   // page loading forever; check up front so the boundary can explain instead.
   const [webgl] = useState(webglAvailable);
@@ -1478,4 +1514,4 @@ export default function Scene(p: Props) {
       </Suspense>
     </Canvas>
   );
-}
+});

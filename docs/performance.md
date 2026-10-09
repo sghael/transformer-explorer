@@ -51,3 +51,51 @@ Build **20260918T001857Z-249d93** replaces the 32 overview frames with one repre
 The earlier representative build **20260918T001430Z-31ecea** measured active overview flow at **780 draw calls**, **18,106 triangles**, **16.7 ms median**, **50.0 ms p95**, and **23.45 ms mean**. The later build changes labels and annotation scope. These diagnostic samples still do not establish sustained 60 fps or target-laptop performance, and were not a controlled comparison.
 
 The GLB contains **16,000 triangles**, **88 shared meshes**, **1,018 nodes**, and **461,416 bytes**. It retains the complete representative interior and compresses repeated model-level geometry. The numerical model still contains 32 layers.
+
+## Per-frame work and bundle split
+
+Before: main at **fff1016** (build 20261002T212845Z-86b1bc). After: this change (build 20261002T215737Z-b0ebfd). Both use asset transformer-edbc6ca676ec.glb and were measured in the same container: 4 cores, Chromium 141.0.7390.37 headless, ANGLE SwiftShader, 1440 × 1100, device pixel ratio 1. These are software-rendering diagnostics, not hardware benchmarks. This host renders even paused views far slower than the host in the tables above (paused overview about 40–45 ms mean here, against 16.7 ms there), so compare rows within this section only.
+
+Method: the browser-checks sampling, 60 `requestAnimationFrame` intervals after warm-up, for paused overview, layer and attention; active overview flow and tour playback from 0 s at 1× were each sampled three times. Main-thread script time comes from the Chrome DevTools Protocol `Performance.getMetrics` (`ScriptDuration`) over 2–3 s windows. The review build supplies renderer counters through `window.__explorerRender`. The public build (`npm --prefix web run build`, `VITE_REVIEW` unset) has no diagnostics globals or per-frame scene report and measures production cost. The public rows show two complete runs.
+
+| Build | Case | Mean frame | Median / p95 per sample | Script ms per second |
+| --- | --- | ---: | --- | ---: |
+| Public, before | active overview flow | 69.1 / 71.6 ms | 50–83 / 150–183 ms | **944 / 952** |
+| Public, after | active overview flow | 44.8 / 42.3 ms | 33–50 / 67–100 ms | **196 / 203** |
+| Public, before | tour playback | 42.6 / 42.5 ms | 33–50 / 50–83 ms | 199 / 195 |
+| Public, after | tour playback | 41.5 / 40.1 ms | 33–50 / 50–83 ms | 160 / 150 |
+| Public, before | paused overview | 42.5 / 40.6 ms | 33–50 / 67 ms | 164 / 182 |
+| Public, after | paused overview | 45.8 / 41.1 ms | 33–50 / 67 ms | 166 / 157 |
+| Review, before | active overview flow | 77.3 ms | 67 / 183–200 ms | 925 |
+| Review, after | active overview flow | 46.1 ms | 50 / 83–100 ms | 223 |
+| Review, before | tour playback | 43.8 ms | 33–50 / 50–100 ms | 226 |
+| Review, after | tour playback | 40.6 ms | 33–50 / 67 ms | 181 |
+
+Before the change, active flow saturated the main thread: about 0.95 s of script per second. After it, flow costs about the same main-thread time as the paused overview, and its frame interval matches the paused overview's. Software rasterization then dominates, so 60 fps is still **not met** under SwiftShader on this host, paused or animated. Renderer counters are unchanged: overview 755 draw calls and 16,272 triangles, layer 743 / 15,852, attention 523 / 9,900, and active overview flow 764–780 / 16,820–18,106 in both builds.
+
+React work during playback, measured with a temporary `Profiler` around the DOM root and the React Three Fiber root on the development server (removed before committing). Each figure is for 3 s; two runs of each agree within 20%.
+
+| Case | DOM root: commits, render time | Three.js root: commits, render time |
+| --- | --- | --- |
+| Tour, before | 58 commits, 776 ms | 56 commits, 278 ms |
+| Tour, after | 64 commits, 56 ms | 62 commits, 38 ms |
+| Flow, before | 30 commits, 402 ms | 28 commits, 213 ms |
+| Flow, after | 37 commits, 42 ms | 68 commits, 63 ms |
+
+Commit counts stay near one per frame because the time readouts and moving markers genuinely change each frame. More frames rendered in the same 3 s after the change, so counts rose slightly. Each commit now renders only those readouts and markers rather than the whole App, its explanation panel and tables, and the scene. The flow's three.js commits also stopped rebuilding line geometry. drei's `Line` rebuilds its geometry and disposes its material whenever it receives a new `points` array, which previously happened for every flow track on every frame.
+
+Bundle (`npm --prefix web run build`, minified / gzip). #18 split the single chunk into vendor chunks but still loaded all of them before the page rendered. This change loads the scene lazily, so the explanation UI needs only the app and React chunks:
+
+| Chunk | fff1016 | main after #18 | This change |
+| --- | ---: | ---: | ---: |
+| index (app) | 1,238.3 / 350.0 kB | 70.7 / 24.0 kB | 47.5 / 15.7 kB |
+| react | — | 189.2 / 59.9 kB | 190.5 / 60.4 kB |
+| Scene | — | in index | 31.6 / 11.5 kB, lazy |
+| vendor | — | 119.1 / 37.6 kB | 119.1 / 37.6 kB, lazy |
+| r3f | — | 144.8 / 45.3 kB | 144.9 / 45.4 kB, lazy |
+| three | — | 704.3 / 181.5 kB | 704.3 / 181.5 kB, lazy |
+| **Loaded before the UI renders** | **1,238.3 / 350.0 kB** | **1,228.1 / 348.2 kB** | **237.9 / 76.1 kB** |
+
+The lazy chunks load in parallel after the entry. Vite's preload helper, which the entry needs to import the scene, is assigned to the react chunk; left to Rollup it landed in the r3f chunk, and the entry then preloaded every 3D chunk. Vite's size warning does not fire with #18's 800 kB limit.
+
+Equivalence: 60 captures (six views at 1440 × 1100 and 390 × 844, eight tour times at both sizes and with reduced motion, and flow steps in five views) give identical app state, scene report, camera pose and visible text before and after. Their screenshots differ by at most 208 pixels, within the 227-pixel variation between two runs of the unchanged build. After merging #18, build 20261004T003707Z-9ffea0 also matches the fff1016 captures in state, report and text, with at most 146 differing pixels. The frame and commit measurements above predate that merge; #18 changed chapter data, disposal and chunking, not per-frame work.
