@@ -779,3 +779,7 @@ code {
   font-size: inherit;
   color: inherit;
 }
+.canvas canvas:focus-visible {
+  outline: 2px solid #f3c779;
+  outline-offset: -2px;
+}
