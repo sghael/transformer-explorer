@@ -802,6 +802,74 @@ try {
     await capture("overview-second-oblique");
     return { before, after };
   });
+  await check(
+    "Keyboard orbit and zoom move the live camera while paused",
+    async () => {
+      await button("Explore").click();
+      await view("Overview");
+      const canvas = page.locator("canvas");
+      await canvas.focus();
+      expect(
+        await canvas.evaluate((element) => document.activeElement === element),
+      ).toBe(true);
+      const pose = async () => (await snapshot(page)).camera;
+      const radius = (camera) =>
+        Math.hypot(
+          ...camera.position.map((value, axis) => value - camera.target[axis]),
+        );
+      // Each key applies on the next rendered frame's report.
+      const press = async (key) => {
+        const before = JSON.stringify(await pose());
+        await page.keyboard.press(key);
+        await expect
+          .poll(async () => JSON.stringify(await pose()))
+          .not.toBe(before);
+        await settle();
+      };
+      const start = await pose();
+      for (let i = 0; i < 3; i++) await press("ArrowRight");
+      await press("ArrowUp");
+      const orbited = await pose();
+      const moved = Math.hypot(
+        ...orbited.position.map((value, axis) => value - start.position[axis]),
+      );
+      expect(moved / radius(start)).toBeGreaterThan(0.05);
+      orbited.target.forEach((value, axis) =>
+        expect(value).toBeCloseTo(start.target[axis], 6),
+      );
+      expect(radius(orbited)).toBeCloseTo(radius(start), 6);
+      await capture("keyboard-orbit-overview");
+      await press("-");
+      expect(radius(await pose()) / radius(orbited)).toBeCloseTo(1 / 0.85, 4);
+      expect((await snapshot(page)).state.view).toBe("overview");
+      // Zooming in past the overview threshold enters the layer, as the wheel does.
+      for (let i = 0; i < 8; i++) {
+        if ((await snapshot(page)).state.view !== "overview") break;
+        await page.keyboard.press("+");
+        await settle();
+      }
+      expect((await snapshot(page)).state.view).toBe("layer");
+      await capture("keyboard-zoom-layer");
+      // Tour playback owns the camera; keys must not move it.
+      await view("Overview");
+      await button("Play tour").click();
+      // Wait for a rendered frame in which the scene has taken the camera.
+      await page.waitForFunction(() => window.__explorerScene?.playing);
+      await canvas.focus();
+      const handled = await canvas.evaluate((element) => {
+        const event = new KeyboardEvent("keydown", {
+          key: "ArrowRight",
+          bubbles: true,
+          cancelable: true,
+        });
+        element.dispatchEvent(event);
+        return event.defaultPrevented;
+      });
+      expect(handled).toBe(false);
+      await button("Pause tour").click();
+      return { start, orbited, ignoredDuringPlayback: !handled };
+    },
+  );
   await check("Keyboard controls select layers and retain focus", async () => {
     const step = async (label, field, from, to) => {
       const control = page.getByLabel(label, { exact: true });
@@ -1218,7 +1286,7 @@ try {
         target.getByText("Two selected expert outputs"),
       ).toBeVisible();
       await expect(target.locator(".location")).toContainText("No 3D view");
-      await expect(target.getByText("Drag to orbit")).toHaveCount(0);
+      await expect(target.getByText("to orbit")).toHaveCount(0);
       await capture(`failure-${name}`, target);
       evidence[name] = await alert.textContent();
       await failing.close();

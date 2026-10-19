@@ -379,3 +379,19 @@ Commands and outcomes, on build **20261002T215737Z-b0ebfd** (asset transformer-e
 After merging main (#18, #20) on build **20261004T003707Z-9ffea0**: `npm --prefix web test` **28/28**; lint, format:check and TypeScript pass; browser-checks **21/21**, deep-checks **11/11**, review-checks **16/16**, flight-checks **59/59**, navigation-checks **7/7** and explainer-checks **7/7**; semantic-check and inspect pass. The entry preloads only the react chunk. An aborted `Scene` or `three` chunk still replaces only the 3D view. The 60 captures again match the fff1016 baseline in state, report and text, with at most 146 differing pixels.
 
 The capture, measurement and commit-counting scripts were temporary and are not committed. Remaining defects: commit counts are still about one per frame during playback, because readouts and markers change each frame; orbit still has no keyboard equivalent beyond the view buttons. Hardware-GPU and target-laptop performance remain unmeasured. Next bounded task: measure the same flow and tour cases on the target laptop's browser with a hardware GPU.
+
+## Follow-up: keyboard orbit
+
+The README requires keyboard alternatives for essential actions, and the audit noted that orbit had none beyond the view buttons. The focused canvas now accepts arrow keys to orbit around the current target (5° steps, 15° with Shift), and + / − or Page Up / Page Down to zoom by 15%. Keyboard zoom crosses the same overview, layer and attention thresholds as the wheel. Keys do nothing while orbit is disabled, that is during tour playback and flights. The canvas is focusable, with role `application`, an accessible label and a visible focus outline. The scene legend now reads "Drag or use arrow keys to orbit · Scroll or +/− to zoom · Select an object to inspect". The scene report records `playing`, so checks can wait for a frame in which the scene owns the camera.
+
+New browser-checks check "Keyboard orbit and zoom move the live camera while paused":
+- Three right-arrow presses and one up-arrow press move the camera by more than 5% of the orbit radius, keeping the target and radius.
+- `-` scales the radius by 1/0.85.
+- Repeated `+` enters the layer view.
+- A key during playback is not handled.
+
+It failed on a build with the key listener removed and on a build that ignores the playback lockout. A first version of the check sent the playback key before the scene had committed the playback state (40 ms after Play); it now waits for a rendered frame reporting playback, and passed 3/3 in a row. Captures keyboard-orbit-overview.png and keyboard-zoom-layer.png in artifacts/browser/ were inspected and show the focus outline.
+
+On build **20261009T184018Z-519bfd** (asset transformer-edbc6ca676ec.glb, unchanged), run one at a time: browser-checks **22/22**, deep-checks **11/11**, review-checks **16/16**, flight-checks **59/59**, navigation-checks **7/7**, explainer-checks **7/7**; semantic-check and inspect pass, with no browser errors. `npm --prefix web test` **28/28**; lint, format:check and TypeScript pass.
+
+Remaining defects: there is no keyboard pan; screen-reader behavior of the `application` role was not tested with an actual screen reader; hardware-GPU and target-laptop performance remain unmeasured. Next bounded task: measure flow and tour performance on the target laptop's browser with a hardware GPU.

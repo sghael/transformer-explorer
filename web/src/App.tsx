@@ -677,7 +677,8 @@ export default function App() {
               {!sceneFailed && (
                 <>
                   <br />
-                  Drag to orbit · Scroll to zoom · Select an object to inspect
+                  Drag or use arrow keys to orbit · Scroll or +/− to zoom ·
+                  Select an object to inspect
                 </>
               )}
             </div>

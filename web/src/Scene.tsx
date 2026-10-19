@@ -1217,6 +1217,7 @@ function Model(p: Props) {
         decode: p.decode,
         flowTime: steppedTime(p.reduced)(p.flowClock.get()),
         flowPlaying: p.flowPlaying,
+        playing: p.playing,
         flowPackets: renderScene.children.flatMap(function collect(o): {
           kind: string;
           position: number[];
@@ -1307,6 +1308,81 @@ function Model(p: Props) {
       };
     }
   });
+  // Zooming past these distances enters or leaves a detail level, whether by
+  // pointer, wheel or keyboard.
+  function semanticZoom() {
+    if (p.playing || p.normFocus || !controls.current) return;
+    const distance =
+      camera.position.distanceTo(controls.current.target) /
+      (p.state.view === "overview" ? 1 : FOCUS_SCALE);
+    // Different entry/exit distances prevent oscillation between detail levels.
+    if (p.state.view === "overview" && distance < 10) p.onView("layer");
+    else if (p.state.view === "layer" && distance < 6) p.onView("attention");
+    else if (p.state.view === "layer" && distance > 40) p.onView("overview");
+    else if (p.state.view === "attention" && distance > 22) p.onView("layer");
+  }
+  // Keyboard alternative to pointer orbit on the focused canvas: arrow keys
+  // orbit around the current target, + / − and Page Up / Page Down zoom.
+  // Controls are disabled during tour playback and flights, so keys are too.
+  const keyboardOrbit = useRef<(event: KeyboardEvent) => void>(() => {});
+  useLayoutEffect(() => {
+    keyboardOrbit.current = (event) => {
+      const orbit = controls.current;
+      if (!orbit?.enabled || event.altKey || event.ctrlKey || event.metaKey)
+        return;
+      const step = THREE.MathUtils.degToRad(event.shiftKey ? 15 : 5);
+      const turn: Record<string, [number, number]> = {
+        ArrowLeft: [-step, 0],
+        ArrowRight: [step, 0],
+        ArrowUp: [0, -step],
+        ArrowDown: [0, step],
+      };
+      const zoom: Record<string, number> = {
+        "+": 0.85,
+        "=": 0.85,
+        PageUp: 0.85,
+        "-": 1 / 0.85,
+        _: 1 / 0.85,
+        PageDown: 1 / 0.85,
+      };
+      if (!turn[event.key] && !zoom[event.key]) return;
+      event.preventDefault();
+      moving.current = false;
+      stopOrbitInertia(orbit);
+      const offset = camera.position.clone().sub(orbit.target);
+      const spherical = new THREE.Spherical().setFromVector3(offset);
+      if (turn[event.key]) {
+        spherical.theta += turn[event.key][0];
+        spherical.phi = THREE.MathUtils.clamp(
+          spherical.phi + turn[event.key][1],
+          Math.max(orbit.minPolarAngle, 0.01),
+          Math.min(orbit.maxPolarAngle, Math.PI - 0.01),
+        );
+      } else
+        spherical.radius = THREE.MathUtils.clamp(
+          spherical.radius * zoom[event.key],
+          orbit.minDistance,
+          orbit.maxDistance,
+        );
+      camera.position
+        .copy(orbit.target)
+        .add(offset.setFromSpherical(spherical));
+      orbit.update();
+      if (zoom[event.key]) semanticZoom();
+    };
+  });
+  useEffect(() => {
+    const canvas = gl.domElement;
+    canvas.tabIndex = 0;
+    canvas.setAttribute("role", "application");
+    canvas.setAttribute(
+      "aria-label",
+      "3D model. Arrow keys orbit the camera; plus and minus zoom.",
+    );
+    const onKey = (event: KeyboardEvent) => keyboardOrbit.current(event);
+    canvas.addEventListener("keydown", onKey);
+    return () => canvas.removeEventListener("keydown", onKey);
+  }, [gl]);
   return (
     <>
       <group ref={contours} name="layer-contours">
@@ -1464,20 +1540,7 @@ function Model(p: Props) {
         minDistance={0.001}
         maxDistance={150}
         onStart={() => (moving.current = false)}
-        onEnd={() => {
-          if (p.playing || p.normFocus || !controls.current) return;
-          const distance =
-            camera.position.distanceTo(controls.current.target) /
-            (p.state.view === "overview" ? 1 : FOCUS_SCALE);
-          // Different entry/exit distances prevent oscillation between detail levels.
-          if (p.state.view === "overview" && distance < 10) p.onView("layer");
-          else if (p.state.view === "layer" && distance < 6)
-            p.onView("attention");
-          else if (p.state.view === "layer" && distance > 40)
-            p.onView("overview");
-          else if (p.state.view === "attention" && distance > 22)
-            p.onView("layer");
-        }}
+        onEnd={semanticZoom}
       />
     </>
   );
